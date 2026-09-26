@@ -1,0 +1,5 @@
+.venv/
+.env
+__pycache__/
+*.pyc
+Python-Task1-VoiceAssistant/voice_assistant_backup.py
