@@ -1,24 +1,24 @@
-# Apex AI — Advanced Voice Assistant
+# Apex AI â€” Advanced Voice Assistant
 
-A Python-based AI voice assistant developed for the **Oasis Infobyte Python Programming Internship — Task 1**.
+A Python-based AI voice assistant developed for the **Oasis Infobyte Python Programming Internship â€” Task 1**.
 
 ## Features
 
-- ??? Voice input using SpeechRecognition
-- ?? Text-to-speech responses using pyttsx3
-- ?? AI-powered conversational responses using Google Gemini
-- ?? Natural-language command handling
-- ?? Live web search using Tavily
-- ?? News search
-- ??? Live weather information using Open-Meteo
-- ? Timed reminders with audible alerts
-- ?? Email sending through Gmail SMTP
-- ?? Safe mathematical calculations
-- ?? Current time and date
-- ?? Website opening and browser search
-- ?? Custom commands through configuration
-- ?? Local knowledge-base support
-- ??? Error handling for unsuccessful speech recognition and external requests
+-  Voice input using SpeechRecognition
+-  Text-to-speech responses using pyttsx3
+-  AI-powered conversational responses using Google Gemini
+-  Natural-language command handling
+-  Live web search using Tavily
+-  News search
+-  Live weather information using Open-Meteo
+-  Timed reminders with audible alerts
+-  Email sending through Gmail SMTP
+-  Safe mathematical calculations
+-  Current time and date
+-  Website opening and browser search
+-  Custom commands through configuration
+-  Local knowledge-base support
+-  Error handling for unsuccessful speech recognition and external requests
 
 ## Technologies
 
@@ -57,6 +57,6 @@ Weather and web-search requests may be sent to their respective external service
 The assistant does not intentionally store personal conversation data in a permanent database.
 Internship
 
-Developed as part of the Oasis Infobyte Python Programming Internship — Task 1.
+Developed as part of the Oasis Infobyte Python Programming Internship â€” Task 1.
 
 Developer: Taqwa Asif
