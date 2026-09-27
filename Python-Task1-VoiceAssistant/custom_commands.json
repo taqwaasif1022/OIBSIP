@@ -1,0 +1,11 @@
+{
+    "open portfolio": {
+        "url": "https://github.com/"
+    },
+    "open google": {
+        "url": "https://www.google.com"
+    },
+    "say hello": {
+        "response": "Hello! This is a custom Apex command."
+    }
+}

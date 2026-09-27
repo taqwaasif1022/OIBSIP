@@ -1,3 +1,5 @@
 .venv/
 .env
-__pycache__/
+pycache/
+*.pyc
+voice_assistant_backup.py

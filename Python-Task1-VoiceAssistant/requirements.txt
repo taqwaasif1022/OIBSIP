@@ -1,7 +1,8 @@
-﻿SpeechRecognition
+SpeechRecognition
 pyttsx3
 python-dotenv
 tavily-python
 ddgs
 langchain
 langchain-google-genai
+requests

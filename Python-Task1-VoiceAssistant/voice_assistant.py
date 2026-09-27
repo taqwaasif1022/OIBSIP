@@ -1,14 +1,24 @@
+# ============================================================
+# APEX AI — Advanced Voice Assistant
+# Oasis Infobyte Python Programming Internship — Task 1
+# ============================================================
+
 import os
 import ast
-import operator
+import json
+import re
+import threading
 import webbrowser
+import operator
 from datetime import datetime
+from pathlib import Path
 from urllib.parse import quote_plus
-from tavily import TavilyClient
 
+import requests
 import speech_recognition as sr
 import pyttsx3
 from dotenv import load_dotenv
+from tavily import TavilyClient
 from ddgs import DDGS
 
 from langchain.agents import create_agent
@@ -16,50 +26,64 @@ from langchain.tools import tool
 from langchain_google_genai import ChatGoogleGenerativeAI
 
 
-# ==========================================================
-# APEX AI - INTELLIGENT VOICE AGENT
-# Oasis Infobyte Python Programming Internship
-# Task 1 - Advanced Voice Assistant
-# ==========================================================
-
-
-# ==========================================================
+# ============================================================
 # ENVIRONMENT
-# ==========================================================
+# ============================================================
 
 load_dotenv()
 
-TAVILY_API_KEY = os.getenv("TAVILY_API_KEY")
+BASE_DIR = Path(__file__).resolve().parent
 
-if not TAVILY_API_KEY:
-    raise ValueError("TAVILY_API_KEY not found in .env")
+TAVILY_API_KEY = os.getenv("TAVILY_API_KEY", "").strip()
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
 
-tavily_client = TavilyClient(api_key=TAVILY_API_KEY)
+# Keep existing email configuration compatible
+GMAIL_EMAIL = os.getenv("GMAIL_EMAIL", "").strip()
+GMAIL_PASSWORD = os.getenv("GMAIL_PASSWORD", "").strip()
 
-API_KEY = os.getenv("GEMINI_API_KEY")
-
-if not API_KEY:
-    raise ValueError("GEMINI_API_KEY not found in .env")
-
-
-MODEL_NAME = os.getenv(
-    "GEMINI_MODEL",
-    "gemini-3.6-flash"
+# Also support alternative names if present
+EMAIL_ADDRESS = os.getenv("EMAIL_ADDRESS", "").strip() or GMAIL_EMAIL
+EMAIL_APP_PASSWORD = (
+    os.getenv("EMAIL_APP_PASSWORD", "").strip()
+    or GMAIL_PASSWORD
 )
 
+MODEL_NAME = os.getenv("GEMINI_MODEL", "gemini-3.6-flash").strip()
 
-# ==========================================================
-# SPEECH RECOGNITION
-# ==========================================================
+
+if not TAVILY_API_KEY:
+    print("⚠️ Warning: TAVILY_API_KEY is not configured.")
+
+if not GEMINI_API_KEY:
+    print("⚠️ Warning: GEMINI_API_KEY is not configured.")
+
+
+# ============================================================
+# FILES
+# ============================================================
+
+CUSTOM_COMMANDS_FILE = BASE_DIR / "custom_commands.json"
+KNOWLEDGE_BASE_FILE = BASE_DIR / "knowledge_base.json"
+
+
+# ============================================================
+# SPEECH
+# ============================================================
 
 recognizer = sr.Recognizer()
 
+# Prevent multiple TTS engines from speaking at the same time.
+speech_lock = threading.Lock()
 
-def speak(text):
-    """
-    Convert Apex response into speech.
-    """
 
+def speak(text: str):
+    """
+    Speak text using pyttsx3.
+
+    A new engine is created for each speech request.
+    This avoids the 'run loop already started' problem
+    when reminders speak from a background thread.
+    """
     if not text:
         return
 
@@ -67,357 +91,584 @@ def speak(text):
 
     print(f"\n🤖 Apex: {text}")
 
-    try:
-        engine = pyttsx3.init()
+    with speech_lock:
+        engine = None
 
-        engine.setProperty(
-            "rate",
-            170
-        )
+        try:
+            engine = pyttsx3.init()
 
-        engine.setProperty(
-            "volume",
-            1.0
-        )
+            engine.setProperty("rate", 175)
+            engine.setProperty("volume", 1.0)
 
-        engine.say(text)
+            engine.say(text)
+            engine.runAndWait()
 
-        engine.runAndWait()
+        except Exception as exc:
+            print(f"TTS Error: {exc}")
 
-        engine.stop()
-
-    except Exception as error:
-        print(
-            "TTS Error:",
-            error
-        )
+        finally:
+            try:
+                if engine is not None:
+                    engine.stop()
+            except Exception:
+                pass
 
 
 def listen():
     """
-    Listen to the user's microphone.
+    Listen for a voice command using the microphone.
     """
 
-    try:
+    with sr.Microphone() as source:
 
-        with sr.Microphone() as source:
+        print("\n🎙️ Listening...")
 
-            print(
-                "\n🎙️ Listening..."
-            )
-
+        try:
             recognizer.adjust_for_ambient_noise(
                 source,
-                duration=0.5
+                duration=0.4
             )
 
             audio = recognizer.listen(
                 source,
-                timeout=10,
-                phrase_time_limit=20
+                timeout=6,
+                phrase_time_limit=15
             )
 
+        except sr.WaitTimeoutError:
+            print("⏱️ Listening timed out.")
+            return ""
 
-        command = recognizer.recognize_google(
-            audio
-        )
+        except Exception as exc:
+            print(f"Microphone Error: {exc}")
+            return ""
 
-        print(
-            f"👤 You: {command}"
-        )
+    try:
 
-        return command.strip()
+        text = recognizer.recognize_google(audio)
 
+        print(f"👤 You: {text}")
 
-    except sr.WaitTimeoutError:
-
-        speak(
-            "I didn't hear anything."
-        )
-
-        return ""
-
+        return text.strip()
 
     except sr.UnknownValueError:
 
-        speak(
-            "Sorry, I couldn't understand you."
-        )
+        print("❓ Sorry, I couldn't understand you.")
+
+        return ""
+
+    except sr.RequestError as exc:
+
+        print(f"Speech Recognition Error: {exc}")
+
+        return ""
+
+    except Exception as exc:
+
+        print(f"Speech Error: {exc}")
 
         return ""
 
 
-    except sr.RequestError:
+# ============================================================
+# CUSTOM COMMANDS
+# ============================================================
 
-        speak(
-            "The speech recognition service is unavailable."
+DEFAULT_CUSTOM_COMMANDS = {
+    "say hello": {
+        "type": "say",
+        "value": "Hello! Welcome to Apex AI."
+    },
+    "introduce yourself": {
+        "type": "say",
+        "value": "I am Apex, an AI-powered voice assistant."
+    },
+    "open apex website": {
+        "type": "url",
+        "value": "https://taqwaasif1022.github.io/apex-ai-agent/"
+    }
+}
+
+
+def load_custom_commands():
+    """
+    Load custom commands from custom_commands.json.
+    """
+
+    if not CUSTOM_COMMANDS_FILE.exists():
+
+        try:
+            with open(
+                CUSTOM_COMMANDS_FILE,
+                "w",
+                encoding="utf-8"
+            ) as file:
+
+                json.dump(
+                    DEFAULT_CUSTOM_COMMANDS,
+                    file,
+                    indent=4
+                )
+
+        except Exception as exc:
+            print(f"Custom command file error: {exc}")
+
+        return DEFAULT_CUSTOM_COMMANDS.copy()
+
+    try:
+
+        with open(
+            CUSTOM_COMMANDS_FILE,
+            "r",
+            encoding="utf-8"
+        ) as file:
+
+            data = json.load(file)
+
+        if isinstance(data, dict):
+            return data
+
+    except Exception as exc:
+
+        print(f"Custom command load error: {exc}")
+
+    return DEFAULT_CUSTOM_COMMANDS.copy()
+
+
+def save_custom_commands(commands):
+    """
+    Save custom commands safely.
+    """
+
+    try:
+
+        with open(
+            CUSTOM_COMMANDS_FILE,
+            "w",
+            encoding="utf-8"
+        ) as file:
+
+            json.dump(
+                commands,
+                file,
+                indent=4
+            )
+
+        return True
+
+    except Exception as exc:
+
+        print(f"Custom command save error: {exc}")
+
+        return False
+
+
+@tool
+def run_custom_command(command: str) -> str:
+    """
+    Run a user-defined command from custom_commands.json.
+    """
+
+    commands = load_custom_commands()
+
+    requested = command.lower().strip()
+
+    # Exact match first
+    if requested in commands:
+
+        item = commands[requested]
+
+        action_type = str(
+            item.get("type", "say")
+        ).lower()
+
+        value = str(
+            item.get("value", "")
+        ).strip()
+
+        if action_type == "url":
+
+            if value.startswith(("http://", "https://")):
+                return f"OPEN_URL:{value}"
+
+            return "The custom URL is invalid."
+
+        return value
+
+    # Partial match
+    for name, item in commands.items():
+
+        if name.lower() in requested:
+
+            action_type = str(
+                item.get("type", "say")
+            ).lower()
+
+            value = str(
+                item.get("value", "")
+            ).strip()
+
+            if action_type == "url":
+
+                if value.startswith(("http://", "https://")):
+                    return f"OPEN_URL:{value}"
+
+                return "The custom URL is invalid."
+
+            return value
+
+    return (
+        f"I couldn't find a custom command named "
+        f"'{command}'."
+    )
+
+
+@tool
+def add_custom_command(
+    name: str,
+    action_type: str,
+    value: str
+) -> str:
+    """
+    Add a custom voice command.
+
+    action_type can be:
+    - say
+    - url
+    """
+
+    name = name.strip().lower()
+    action_type = action_type.strip().lower()
+    value = value.strip()
+
+    if not name:
+        return "The command name cannot be empty."
+
+    if action_type not in {"say", "url"}:
+        return "Action type must be either say or url."
+
+    if action_type == "url":
+        if not value.startswith(("http://", "https://")):
+            return "The URL must start with http:// or https://."
+
+    commands = load_custom_commands()
+
+    commands[name] = {
+        "type": action_type,
+        "value": value
+    }
+
+    if save_custom_commands(commands):
+
+        return (
+            f"Custom command '{name}' has been saved."
         )
 
-        return ""
+    return "I couldn't save the custom command."
 
 
-    except Exception as error:
+# ============================================================
+# KNOWLEDGE BASE
+# ============================================================
 
-        print(
-            "Microphone Error:",
-            error
-        )
+DEFAULT_KNOWLEDGE_BASE = {
+    "apex ai": (
+        "Apex AI is an AI-powered voice assistant "
+        "developed as part of the Oasis Infobyte "
+        "Python Programming Internship."
+    ),
 
-        return ""
+    "python": (
+        "Python is a high-level general-purpose "
+        "programming language known for its readable syntax."
+    ),
+
+    "artificial intelligence": (
+        "Artificial Intelligence is the field of building "
+        "systems that can perform tasks that normally "
+        "require human intelligence."
+    ),
+
+    "machine learning": (
+        "Machine Learning is a branch of AI where systems "
+        "learn patterns from data to make predictions "
+        "or decisions."
+    ),
+
+    "generative ai": (
+        "Generative AI refers to AI systems that can "
+        "generate content such as text, images, audio "
+        "or code."
+    )
+}
 
 
-# ==========================================================
-# TOOL 1 - TIME
-# ==========================================================
+def load_knowledge_base():
+
+    if not KNOWLEDGE_BASE_FILE.exists():
+
+        try:
+
+            with open(
+                KNOWLEDGE_BASE_FILE,
+                "w",
+                encoding="utf-8"
+            ) as file:
+
+                json.dump(
+                    DEFAULT_KNOWLEDGE_BASE,
+                    file,
+                    indent=4
+                )
+
+        except Exception as exc:
+            print(f"Knowledge base error: {exc}")
+
+        return DEFAULT_KNOWLEDGE_BASE.copy()
+
+    try:
+
+        with open(
+            KNOWLEDGE_BASE_FILE,
+            "r",
+            encoding="utf-8"
+        ) as file:
+
+            data = json.load(file)
+
+        if isinstance(data, dict):
+            return data
+
+    except Exception as exc:
+
+        print(f"Knowledge base load error: {exc}")
+
+    return DEFAULT_KNOWLEDGE_BASE.copy()
+
+
+@tool
+def local_knowledge(question: str) -> str:
+    """
+    Search the local knowledge base.
+    """
+
+    question_lower = question.lower()
+
+    knowledge = load_knowledge_base()
+
+    for key, answer in knowledge.items():
+
+        if key.lower() in question_lower:
+
+            return str(answer)
+
+    return (
+        "No matching information was found "
+        "in the local knowledge base."
+    )
+
+
+# ============================================================
+# TIME
+# ============================================================
 
 @tool
 def get_current_time() -> str:
     """
-    Get the current local time.
-    Use this tool whenever the user asks for the current time.
+    Get the current system time.
+
+    IMPORTANT:
+    The existing system/laptop timezone is intentionally used.
     """
 
-    now = datetime.now()
+    return datetime.now().strftime("%I:%M %p")
 
-    return now.strftime(
-        "The current time is %I:%M %p."
-    )
-
-
-# ==========================================================
-# TOOL 1B - TAVILY WEB SEARCH
-# ==========================================================
-
-@tool
-def web_search(query: str) -> str:
-    """
-    Search the live web using Tavily.
-
-    Use this for current, recent, latest, factual, or changing
-    information, and whenever the user explicitly asks to search
-    the web.
-    """
-
-    print(f"\n🌐 Tavily searching: {query}")
-
-    try:
-        response = tavily_client.search(
-            query=query,
-            search_depth="advanced",
-            max_results=5
-        )
-
-        results = response.get("results", [])
-
-        if not results:
-            return "No useful web results were found."
-
-        output = []
-
-        for result in results:
-            title = result.get("title", "No title")
-            content = result.get("content", "")
-            url = result.get("url", "")
-
-            output.append(
-                f"Title: {title}\n"
-                f"Content: {content}\n"
-                f"Source: {url}"
-            )
-
-        return "\n\n".join(output)
-
-    except Exception as error:
-        print(f"Tavily Error: {error}")
-        return "Tavily web search is temporarily unavailable."
-
-
-# ==========================================================
-# TOOL 2 - DATE
-# ==========================================================
 
 @tool
 def get_current_date() -> str:
     """
-    Get today's local date and day.
-    Use this tool whenever the user asks for today's date or day.
+    Get the current system date.
     """
 
-    now = datetime.now()
-
-    return now.strftime(
-        "Today is %A, %B %d, %Y."
+    return datetime.now().strftime(
+        "%A, %B %d, %Y"
     )
 
 
-# ==========================================================
-# TOOL 3 - CALCULATOR
-# ==========================================================
+# ============================================================
+# CALCULATOR
+# ============================================================
 
-ALLOWED_OPERATORS = {
-
-    ast.Add:
-        operator.add,
-
-    ast.Sub:
-        operator.sub,
-
-    ast.Mult:
-        operator.mul,
-
-    ast.Div:
-        operator.truediv,
-
-    ast.Pow:
-        operator.pow,
-
-    ast.Mod:
-        operator.mod,
-
-    ast.USub:
-        operator.neg,
-
-    ast.UAdd:
-        operator.pos,
+_ALLOWED_OPERATORS = {
+    ast.Add: operator.add,
+    ast.Sub: operator.sub,
+    ast.Mult: operator.mul,
+    ast.Div: operator.truediv,
+    ast.Mod: operator.mod,
+    ast.Pow: operator.pow,
+    ast.USub: operator.neg,
+    ast.UAdd: operator.pos,
+    ast.FloorDiv: operator.floordiv,
 }
 
 
-def evaluate_math_node(node):
+def safe_calculate_node(node):
 
-    if isinstance(
-        node,
-        ast.Constant
-    ):
+    if isinstance(node, ast.Expression):
+        return safe_calculate_node(node.body)
+
+    if isinstance(node, ast.Constant):
 
         if isinstance(
             node.value,
             (int, float)
         ):
-
             return node.value
 
-        raise ValueError(
-            "Invalid value"
-        )
+        raise ValueError("Invalid number.")
 
+    if isinstance(node, ast.UnaryOp):
 
-    if isinstance(
-        node,
-        ast.BinOp
-    ):
-
-        left = evaluate_math_node(
-            node.left
-        )
-
-        right = evaluate_math_node(
-            node.right
-        )
-
-        operation = ALLOWED_OPERATORS.get(
+        operation = _ALLOWED_OPERATORS.get(
             type(node.op)
         )
 
         if operation is None:
-
-            raise ValueError(
-                "Unsupported operation"
-            )
+            raise ValueError("Invalid operator.")
 
         return operation(
-            left,
-            right
+            safe_calculate_node(node.operand)
         )
 
+    if isinstance(node, ast.BinOp):
 
-    if isinstance(
-        node,
-        ast.UnaryOp
-    ):
-
-        value = evaluate_math_node(
-            node.operand
-        )
-
-        operation = ALLOWED_OPERATORS.get(
+        operation = _ALLOWED_OPERATORS.get(
             type(node.op)
         )
 
         if operation is None:
+            raise ValueError("Invalid operator.")
 
-            raise ValueError(
-                "Unsupported operation"
-            )
+        left = safe_calculate_node(node.left)
+        right = safe_calculate_node(node.right)
 
-        return operation(
-            value
-        )
+        return operation(left, right)
 
-
-    raise ValueError(
-        "Invalid mathematical expression"
-    )
+    raise ValueError("Unsupported expression.")
 
 
 @tool
 def calculate(expression: str) -> str:
     """
-    Calculate a mathematical expression.
-
-    The expression should contain numbers and normal mathematical
-    operators such as +, -, *, /, %, ** and parentheses.
-
-    Example:
-    25 + 35
-    800 * 0.25
-    2 ** 8
+    Safely calculate a mathematical expression.
     """
 
     try:
+
+        expression = expression.replace(
+            "^",
+            "**"
+        )
 
         tree = ast.parse(
             expression,
             mode="eval"
         )
 
-        result = evaluate_math_node(
-            tree.body
-        )
+        result = safe_calculate_node(tree)
 
-        return (
-            f"The result is {result}."
-        )
-
-    except ZeroDivisionError:
-
-        return (
-            "Division by zero is not allowed."
-        )
+        return str(result)
 
     except Exception:
 
         return (
-            "I could not calculate that expression."
+            "I couldn't calculate that expression."
         )
 
 
-# ==========================================================
-# TOOL 4 - WEB SEARCH
-# ==========================================================
+# ============================================================
+# TAVILY WEB SEARCH
+# ============================================================
 
-# Web search is handled by the Tavily tool above.
+@tool
+def web_search(query: str) -> str:
+    """
+    Search the web using Tavily.
+    """
+
+    if not TAVILY_API_KEY:
+
+        return (
+            "Tavily API key is not configured."
+        )
+
+    try:
+
+        print(
+            f"\n🌐 Tavily searching: {query}"
+        )
+
+        client = TavilyClient(
+            api_key=TAVILY_API_KEY
+        )
+
+        results = client.search(
+            query=query,
+            search_depth="advanced",
+            max_results=5
+        )
+
+        items = results.get(
+            "results",
+            []
+        )
+
+        if not items:
+
+            return "No useful web results were found."
+
+        formatted = []
+
+        for item in items:
+
+            title = item.get(
+                "title",
+                "Untitled"
+            )
+
+            content = item.get(
+                "content",
+                ""
+            )
+
+            url = item.get(
+                "url",
+                ""
+            )
+
+            formatted.append(
+                f"{title}\n{content}\n{url}"
+            )
+
+        return "\n\n".join(formatted)
+
+    except Exception as exc:
+
+        print(f"Tavily Error: {exc}")
+
+        return (
+            "Web search is temporarily unavailable."
+        )
 
 
-# ==========================================================
-# TOOL 5 - NEWS SEARCH
-# ==========================================================
+# ============================================================
+# NEWS
+# ============================================================
 
 @tool
 def search_news(query: str) -> str:
     """
-    Search recent news about a topic.
-    Use this when the user asks for latest news, recent news,
-    or current developments.
+    Search recent news.
     """
 
     try:
@@ -426,715 +677,1062 @@ def search_news(query: str) -> str:
             f"\n📰 Searching news: {query}"
         )
 
-        results = DDGS().news(
-            query,
-            max_results=5
-        )
+        with DDGS() as ddgs:
+
+            results = list(
+                ddgs.news(
+                    query,
+                    max_results=5
+                )
+            )
 
         if not results:
 
-            return (
-                "No recent news results were found."
-            )
+            return "No news results were found."
 
+        output = []
 
-        formatted_results = []
+        for item in results:
 
-
-        for number, result in enumerate(
-            results,
-            start=1
-        ):
-
-            title = result.get(
+            title = item.get(
                 "title",
-                "No title"
+                "Untitled"
             )
 
-            body = result.get(
-                "body",
-                ""
-            )
-
-            source = result.get(
+            source = item.get(
                 "source",
                 ""
             )
 
-            date = result.get(
-                "date",
-                ""
-            )
-
-            url = result.get(
+            url = item.get(
                 "url",
                 ""
             )
 
-
-            formatted_results.append(
-                f"""
-News {number}
-Title: {title}
-Source: {source}
-Date: {date}
-Summary: {body}
-URL: {url}
-"""
+            output.append(
+                f"{title} — {source}\n{url}"
             )
 
+        return "\n\n".join(output)
 
-        return "\n".join(
-            formatted_results
-        )
+    except Exception as exc:
 
-
-    except Exception as error:
-
-        print(
-            "News Search Error:",
-            error
-        )
+        print(f"News Error: {exc}")
 
         return (
             "News search is temporarily unavailable."
         )
 
 
-# ==========================================================
-# TOOL 6 - WEATHER SEARCH
-# ==========================================================
+# ============================================================
+# LIVE WEATHER — OPEN-METEO
+# ============================================================
+
+WEATHER_CODES = {
+    0: "clear sky",
+    1: "mainly clear",
+    2: "partly cloudy",
+    3: "overcast",
+    45: "fog",
+    48: "depositing rime fog",
+    51: "light drizzle",
+    53: "moderate drizzle",
+    55: "dense drizzle",
+    56: "light freezing drizzle",
+    57: "dense freezing drizzle",
+    61: "slight rain",
+    63: "moderate rain",
+    65: "heavy rain",
+    66: "light freezing rain",
+    67: "heavy freezing rain",
+    71: "slight snow",
+    73: "moderate snow",
+    75: "heavy snow",
+    77: "snow grains",
+    80: "slight rain showers",
+    81: "moderate rain showers",
+    82: "violent rain showers",
+    85: "slight snow showers",
+    86: "heavy snow showers",
+    95: "thunderstorm",
+    96: "thunderstorm with slight hail",
+    99: "thunderstorm with heavy hail"
+}
+
 
 @tool
 def get_weather(city: str) -> str:
     """
-    Search the web for current weather information for a city.
-    Use this whenever the user asks about weather,
-    temperature, rain, or forecast.
+    Get live weather using Open-Meteo.
+    No API key is required.
     """
 
-    query = (
-        f"current weather in {city}"
-    )
+    city = city.strip()
+
+    if not city:
+
+        return "Please provide a city name."
 
     try:
 
-        results = DDGS().text(
-            query,
-            max_results=4
+        # First find city coordinates
+        geo_response = requests.get(
+            "https://geocoding-api.open-meteo.com/v1/search",
+            params={
+                "name": city,
+                "count": 1,
+                "language": "en",
+                "format": "json"
+            },
+            timeout=10
+        )
+
+        geo_response.raise_for_status()
+
+        geo_data = geo_response.json()
+
+        results = geo_data.get(
+            "results",
+            []
         )
 
         if not results:
 
             return (
-                f"I couldn't find weather information "
-                f"for {city}."
+                f"I couldn't find the location '{city}'."
             )
 
+        location = results[0]
 
-        weather_text = []
+        latitude = location["latitude"]
+        longitude = location["longitude"]
 
-
-        for result in results:
-
-            title = result.get(
-                "title",
-                ""
-            )
-
-            body = result.get(
-                "body",
-                ""
-            )
-
-            weather_text.append(
-                f"{title}: {body}"
-            )
-
-
-        return "\n".join(
-            weather_text
+        display_name = location.get(
+            "name",
+            city
         )
 
+        country = location.get(
+            "country",
+            ""
+        )
 
-    except Exception as error:
+        # Get current weather
+        weather_response = requests.get(
+            "https://api.open-meteo.com/v1/forecast",
+            params={
+                "latitude": latitude,
+                "longitude": longitude,
+                "current": (
+                    "temperature_2m,"
+                    "relative_humidity_2m,"
+                    "apparent_temperature,"
+                    "weather_code,"
+                    "wind_speed_10m"
+                ),
+                "timezone": "auto"
+            },
+            timeout=10
+        )
 
-        print(
-            "Weather Error:",
-            error
+        weather_response.raise_for_status()
+
+        weather_data = weather_response.json()
+
+        current = weather_data.get(
+            "current",
+            {}
+        )
+
+        temperature = current.get(
+            "temperature_2m"
+        )
+
+        feels_like = current.get(
+            "apparent_temperature"
+        )
+
+        humidity = current.get(
+            "relative_humidity_2m"
+        )
+
+        wind = current.get(
+            "wind_speed_10m"
+        )
+
+        weather_code = current.get(
+            "weather_code"
+        )
+
+        description = WEATHER_CODES.get(
+            weather_code,
+            "unknown conditions"
         )
 
         return (
-            "Weather search is temporarily unavailable."
+            f"Current weather in {display_name}, {country}: "
+            f"{description}. "
+            f"Temperature {temperature}°C, "
+            f"feels like {feels_like}°C, "
+            f"humidity {humidity}%, "
+            f"wind speed {wind} km/h."
+        )
+
+    except requests.RequestException as exc:
+
+        print(f"Weather API Error: {exc}")
+
+        return (
+            "The live weather service is temporarily "
+            "unavailable."
+        )
+
+    except Exception as exc:
+
+        print(f"Weather Error: {exc}")
+
+        return (
+            "I couldn't retrieve the weather right now."
         )
 
 
-# ==========================================================
-# TOOL 7 - OPEN WEBSITE
-# ==========================================================
+# ============================================================
+# OPEN WEBSITE / BROWSER SEARCH
+# ============================================================
 
 @tool
-def open_website(website: str) -> str:
+def open_website(site: str) -> str:
     """
-    Open a website in the user's default browser.
-
-    Use this when the user says:
-    open YouTube,
-    open Google,
-    open GitHub,
-    open Gmail,
-    or open a specific website.
+    Open a website in the default browser.
     """
 
-    website = website.strip().lower()
+    site = site.strip()
 
+    if not site:
 
-    common_websites = {
+        return "Please specify a website."
 
-        "youtube":
-            "https://www.youtube.com",
-
-        "google":
-            "https://www.google.com",
-
-        "github":
-            "https://github.com",
-
-        "gmail":
-            "https://mail.google.com",
-
-        "linkedin":
-            "https://www.linkedin.com",
-
-        "chatgpt":
-            "https://chatgpt.com",
+    common_sites = {
+        "google": "https://www.google.com",
+        "gmail": "https://mail.google.com",
+        "github": "https://github.com",
+        "linkedin": "https://www.linkedin.com",
+        "facebook": "https://www.facebook.com",
+        "instagram": "https://www.instagram.com",
+        "chatgpt": "https://chatgpt.com",
+        "youtube": "https://www.youtube.com"
     }
 
+    key = site.lower()
 
-    if website in common_websites:
+    if key in common_sites:
 
-        url = common_websites[
-            website
-        ]
+        return f"OPEN_URL:{common_sites[key]}"
 
-
-    elif website.startswith(
-        "http://"
-    ) or website.startswith(
-        "https://"
+    if site.startswith(
+        ("http://", "https://")
     ):
 
-        url = website
+        return f"OPEN_URL:{site}"
 
+    if "." in site and " " not in site:
 
-    else:
+        return f"OPEN_URL:https://{site}"
 
-        if "." not in website:
+    url = (
+        "https://www.google.com/search?q="
+        + quote_plus(site)
+    )
 
-            url = (
-                "https://www.google.com/search?q="
-                + quote_plus(website)
-            )
+    return f"OPEN_URL:{url}"
 
-        else:
-
-            url = (
-                "https://"
-                + website
-            )
-
-
-    try:
-
-        return (
-            f"OPEN_URL:{url}\nI opened {website}."
-        )
-
-    except Exception as error:
-
-        print(
-            "Browser Error:",
-            error
-        )
-
-        return (
-            f"I couldn't open {website}."
-        )
-
-
-# ==========================================================
-# TOOL 8 - OPEN GOOGLE SEARCH
-# ==========================================================
 
 @tool
 def open_search_in_browser(query: str) -> str:
     """
-    Open a Google search page in the user's browser.
-
-    Use this only if the user specifically asks to open,
-    show, or display search results in the browser.
+    Open a Google search in the browser.
     """
 
-    try:
+    query = query.strip()
 
-        url = (
-            "https://www.google.com/search?q="
-            + quote_plus(query)
-        )
+    if not query:
 
-        return (
-            f"OPEN_URL:{url}\nI opened browser search results for {query}."
-        )
+        return "Please provide a search query."
 
-    except Exception as error:
+    url = (
+        "https://www.google.com/search?q="
+        + quote_plus(query)
+    )
 
-        print(
-            "Browser Search Error:",
-            error
-        )
-
-        return (
-            "I couldn't open the browser search."
-        )
+    return f"OPEN_URL:{url}"
 
 
-# ==========================================================
-# TOOL 9 - YOUTUBE SEARCH
-# ==========================================================
+# ============================================================
+# EMAIL
+# ============================================================
 
 @tool
-def search_youtube(query: str) -> str:
+def send_email(
+    to: str,
+    subject: str,
+    body: str
+) -> str:
     """
-    Search YouTube and open the search results in the browser.
-    Use this when the user asks to find or search for a video,
-    tutorial, song, or topic on YouTube.
+    Send an email using Gmail SMTP.
+    """
+
+    if not EMAIL_ADDRESS or not EMAIL_APP_PASSWORD:
+
+        return (
+            "Email is not configured. "
+            "Please configure GMAIL_EMAIL and "
+            "GMAIL_PASSWORD in the .env file."
+        )
+
+    to = to.strip()
+    subject = subject.strip()
+    body = body.strip()
+
+    if not to or "@" not in to:
+
+        return "Please provide a valid recipient email address."
+
+    if not subject:
+
+        subject = "Message from Apex AI"
+
+    if not body:
+
+        return "The email body cannot be empty."
+
+    try:
+
+        from email.message import EmailMessage
+        import smtplib
+
+        message = EmailMessage()
+
+        message["From"] = EMAIL_ADDRESS
+        message["To"] = to
+        message["Subject"] = subject
+
+        message.set_content(body)
+
+        with smtplib.SMTP_SSL(
+            "smtp.gmail.com",
+            465,
+            timeout=20
+        ) as server:
+
+            server.login(
+                EMAIL_ADDRESS,
+                EMAIL_APP_PASSWORD
+            )
+
+            server.send_message(message)
+
+        return (
+            f"Email successfully sent to {to}."
+        )
+
+    except smtplib.SMTPAuthenticationError:
+
+        return (
+            "Email authentication failed. "
+            "Check the Gmail address and App Password."
+        )
+
+    except Exception as exc:
+
+        print(f"Email Error: {exc}")
+
+        return (
+            "I couldn't send the email. "
+            "Please check your email settings."
+        )
+
+
+# ============================================================
+# REMINDERS
+# ============================================================
+
+active_reminders = []
+reminder_lock = threading.Lock()
+
+
+def reminder_alert(message: str):
+    """
+    Called when a reminder timer finishes.
+    """
+
+    print(
+        f"\n\n⏰ REMINDER: {message}"
+    )
+
+    # Speech happens after timer finishes.
+    speak(
+        f"Reminder: {message}"
+    )
+
+    with reminder_lock:
+
+        if message in active_reminders:
+
+            active_reminders.remove(message)
+
+
+def create_reminder(seconds: float, message: str):
+
+    timer = threading.Timer(
+        seconds,
+        reminder_alert,
+        args=(message,)
+    )
+
+    # Important:
+    # Timer must not prevent the assistant from closing.
+    timer.daemon = True
+
+    timer.start()
+
+    with reminder_lock:
+
+        active_reminders.append(message)
+
+    return timer
+
+
+@tool
+def set_reminder(
+    minutes: float,
+    message: str
+) -> str:
+    """
+    Set a reminder after a number of minutes.
     """
 
     try:
 
-        url = (
-            "https://www.youtube.com/results?search_query="
-            + quote_plus(query)
-        )
+        minutes = float(minutes)
 
-        return (
-            f"OPEN_URL:{url}\nI opened YouTube results for {query}."
-        )
+    except Exception:
 
-    except Exception as error:
+        return "Please provide a valid number of minutes."
 
-        print(
-            "YouTube Error:",
-            error
-        )
+    message = message.strip()
 
-        return (
-            "I couldn't open YouTube search."
-        )
+    if minutes <= 0:
 
+        return "Reminder time must be greater than zero."
 
-# ==========================================================
-# LANGCHAIN MODEL
-# ==========================================================
+    if not message:
 
-model = ChatGoogleGenerativeAI(
+        return "Please provide a reminder message."
 
-    model=MODEL_NAME,
+    seconds = minutes * 60
 
-    google_api_key=API_KEY,
+    create_reminder(
+        seconds,
+        message
+    )
 
-    temperature=0.2,
+    if minutes == 1:
 
-    max_retries=2,
-)
+        time_text = "1 minute"
 
+    else:
 
-# ==========================================================
-# TOOLS
-# ==========================================================
+        time_text = f"{minutes:g} minutes"
 
-tools = [
-
-    get_current_time,
-
-    get_current_date,
-
-    calculate,
-
-    web_search,
-
-    search_news,
-
-    get_weather,
-
-    open_website,
-
-    open_search_in_browser,
-
-    search_youtube,
-]
-
-
-# ==========================================================
-# SYSTEM PROMPT
-# ==========================================================
-
-SYSTEM_PROMPT = """
-You are Apex, an intelligent personal AI voice assistant.
-
-Your job is to understand the user's natural-language request and
-complete it using the available tools whenever appropriate.
-
-Important rules:
-
-1. You may use multiple tools for one user request.
-
-2. If a user asks for current, recent, latest, live, or changing
-information, use a web-search or news-search tool instead of relying
-only on your internal knowledge.
-
-3. If a user asks for weather, use the weather tool.
-
-4. If a user asks for mathematical calculations, use the calculator.
-
-5. If a user asks for the current time or date, use the corresponding
-time/date tool.
-
-6. If a user asks you to open a website, use the website tool.
-
-7. If the user asks you to search YouTube, use the YouTube tool.
-
-8. If the user asks to open search results in their browser, use the
-browser search tool.
-
-9. For normal explanations, conversations, coding questions, learning,
-and general knowledge, answer directly.
-
-10. A single request can contain multiple tasks. Complete all reasonable
-parts of the request one by one.
-
-11. Never pretend that a tool succeeded if it returned an error.
-
-12. Keep spoken answers concise and natural. Usually use 1 to 4 short
-sentences unless the user requests detail.
-
-13. Do not use markdown tables in spoken responses.
-
-14. You are called Apex.
-"""
-
-
-# ==========================================================
-# CREATE LANGCHAIN AGENT
-# ==========================================================
-
-agent = create_agent(
-
-    model=model,
-
-    tools=tools,
-
-    system_prompt=SYSTEM_PROMPT,
-)
-
-
-# ==========================================================
-# CONVERSATION MEMORY
-# ==========================================================
-
-conversation = []
-
-
-# ==========================================================
-# EXTRACT FINAL RESPONSE
-# ==========================================================
-
-def extract_text(message):
-
-    content = getattr(
-        message,
-        "content",
-        ""
+    return (
+        f"Reminder set for {time_text}: {message}"
     )
 
 
-    if isinstance(
-        content,
-        str
-    ):
+@tool
+def set_reminder_seconds(
+    seconds: int,
+    message: str
+) -> str:
+    """
+    Set a reminder after a number of seconds.
+    Useful for testing.
+    """
 
-        return content.strip()
+    try:
 
+        seconds = int(seconds)
 
-    if isinstance(
-        content,
-        list
-    ):
+    except Exception:
 
-        pieces = []
+        return "Please provide a valid number of seconds."
 
+    if seconds <= 0:
 
-        for block in content:
+        return "Reminder time must be greater than zero."
 
-            if isinstance(
-                block,
-                str
-            ):
+    message = message.strip()
 
-                pieces.append(
-                    block
-                )
+    if not message:
 
+        return "Please provide a reminder message."
 
-            elif isinstance(
-                block,
-                dict
-            ):
+    create_reminder(
+        seconds,
+        message
+    )
 
-                text = block.get(
-                    "text"
-                )
-
-                if text:
-
-                    pieces.append(
-                        text
-                    )
+    return (
+        f"Reminder set for {seconds} seconds: "
+        f"{message}"
+    )
 
 
-        return " ".join(
-            pieces
-        ).strip()
+# ============================================================
+# DIRECT COMMAND HANDLING
+# ============================================================
 
+def handle_direct_command(command: str):
+    """
+    Handle commands that do not need Gemini.
+    """
 
-    return str(
-        content
-    ).strip()
+    text = command.lower().strip()
 
+    # --------------------------------------------------------
+    # EXIT
+    # --------------------------------------------------------
 
-# ==========================================================
-# DIRECT COMMANDS
-# ==========================================================
-
-def handle_direct_command(command):
-    """Handle simple deterministic commands without Gemini."""
-
-    text = command.strip().lower()
-
-    websites = {
-        "youtube": "https://www.youtube.com",
-        "google": "https://www.google.com",
-        "github": "https://github.com",
-        "gmail": "https://mail.google.com",
-        "linkedin": "https://www.linkedin.com",
-        "chatgpt": "https://chatgpt.com",
+    exit_words = {
+        "exit",
+        "quit",
+        "goodbye",
+        "bye",
+        "stop",
+        "shutdown"
     }
 
-    if text in {f"open {name}" for name in websites}:
-        name = text[5:].strip()
-        return f"OPEN_URL:{websites[name]}\nI opened {name}."
+    if text in exit_words:
 
-    if text in {"open youtube", "open youtube.com"}:
-        return f"OPEN_URL:{websites['youtube']}\nI opened YouTube."
+        return "__EXIT__"
 
-    if text.startswith("search youtube for "):
-        query = command[len("search youtube for "):].strip()
-        if query:
-            url = "https://www.youtube.com/results?search_query=" + quote_plus(query)
-            return f"OPEN_URL:{url}\nI opened YouTube results for {query}."
+    # --------------------------------------------------------
+    # CUSTOM COMMAND
+    # --------------------------------------------------------
 
-    if text.startswith("youtube search "):
-        query = command[len("youtube search "):].strip()
-        if query:
-            url = "https://www.youtube.com/results?search_query=" + quote_plus(query)
-            return f"OPEN_URL:{url}\nI opened YouTube results for {query}."
+    custom_match = re.match(
+        r"^(?:run|execute)\s+custom\s+command\s+(.+)$",
+        text
+    )
+
+    if custom_match:
+
+        command_name = custom_match.group(1).strip()
+
+        return run_custom_command.invoke(
+            {
+                "command": command_name
+            }
+        )
+
+    # --------------------------------------------------------
+    # SIMPLE REMINDER
+    # --------------------------------------------------------
+
+    reminder_match = re.match(
+        r"^remind me in "
+        r"(\d+(?:\.\d+)?)\s*"
+        r"(second|seconds|minute|minutes|hour|hours)"
+        r"\s+(?:to\s+)?(.+)$",
+        text
+    )
+
+    if reminder_match:
+
+        amount = float(
+            reminder_match.group(1)
+        )
+
+        unit = reminder_match.group(2)
+
+        message = reminder_match.group(3).strip()
+
+        if "second" in unit:
+
+            seconds = amount
+
+        elif "minute" in unit:
+
+            seconds = amount * 60
+
+        else:
+
+            seconds = amount * 3600
+
+        create_reminder(
+            seconds,
+            message
+        )
+
+        if "hour" in unit:
+
+            time_text = f"{amount:g} hour(s)"
+
+        elif "minute" in unit:
+
+            time_text = f"{amount:g} minute(s)"
+
+        else:
+
+            time_text = f"{amount:g} second(s)"
+
+        return (
+            f"Reminder set for {time_text}: "
+            f"{message}"
+        )
+
+    # --------------------------------------------------------
+    # COMMON WEBSITE COMMANDS
+    # --------------------------------------------------------
+
+    direct_sites = {
+        "open google": "google",
+        "open gmail": "gmail",
+        "open github": "github",
+        "open linkedin": "linkedin",
+        "open facebook": "facebook",
+        "open instagram": "instagram",
+        "open chatgpt": "chatgpt",
+        "open youtube": "youtube"
+    }
+
+    if text in direct_sites:
+
+        return open_website.invoke(
+            {
+                "site": direct_sites[text]
+            }
+        )
+
+    # --------------------------------------------------------
+    # GOOGLE SEARCH
+    # --------------------------------------------------------
+
+    search_match = re.match(
+        r"^(?:search for|google)\s+(.+)$",
+        text
+    )
+
+    if search_match:
+
+        query = search_match.group(1).strip()
+
+        return open_search_in_browser.invoke(
+            {
+                "query": query
+            }
+        )
 
     return None
 
 
-# ==========================================================
-# ASK THE AGENT
-# ==========================================================
+# ============================================================
+# TOOLS
+# ============================================================
 
-def ask_apex(command):
+tools = [
+    get_current_time,
+    get_current_date,
+    calculate,
+    web_search,
+    search_news,
+    get_weather,
+    open_website,
+    open_search_in_browser,
+    send_email,
+    set_reminder,
+    set_reminder_seconds,
+    local_knowledge,
+    run_custom_command,
+    add_custom_command
+]
 
-    global conversation
 
-    direct_response = handle_direct_command(command)
+# ============================================================
+# GEMINI AGENT
+# ============================================================
 
-    if direct_response:
-        return direct_response
+SYSTEM_PROMPT = """
+You are Apex, a helpful intelligent voice assistant.
 
-    conversation.append(
+Your job is to answer naturally and perform actions using tools.
 
-        {
-            "role":
-                "user",
+IMPORTANT TOOL RULES:
 
-            "content":
-                command,
-        }
+1. Use get_current_time when the user asks for the current time.
 
-    )
+2. Use get_current_date when the user asks for today's date.
 
+3. Use get_weather for weather requests.
+
+4. Use send_email when the user asks to send an email.
+   Ask for recipient, subject, and body if information is missing.
+
+5. Use set_reminder for reminders expressed in minutes or hours.
+
+6. Use set_reminder_seconds for very short testing reminders.
+
+7. Use web_search for current information that needs web research.
+
+8. Use search_news for news requests.
+
+9. Use calculate for mathematical calculations.
+
+10. Use open_website when the user asks to open a website.
+
+11. Use open_search_in_browser when the user asks to search something
+    in a browser.
+
+12. Use run_custom_command for existing custom commands.
+
+13. Use add_custom_command when the user explicitly asks to create
+    a new custom command.
+
+14. Use local_knowledge for information that may exist in the local
+    knowledge base.
+
+15. For normal general-knowledge questions, answer directly.
+
+16. Never claim that an email was sent unless the send_email tool
+    successfully reports that it was sent.
+
+17. Keep responses concise and natural because responses are spoken
+    aloud.
+
+18. Never expose API keys, passwords, or private configuration.
+
+19. Do not invent tool results.
+
+You are Apex AI.
+"""
+
+
+agent = None
+
+if GEMINI_API_KEY:
 
     try:
 
-        print(
-            "\n🧠 Apex is thinking..."
+        # No temperature parameter here.
+        # This avoids the Gemini sampling-parameter warning.
+        model = ChatGoogleGenerativeAI(
+            model=MODEL_NAME,
+            google_api_key=GEMINI_API_KEY,
+            max_retries=2
         )
 
+        agent = create_agent(
+            model=model,
+            tools=tools,
+            system_prompt=SYSTEM_PROMPT
+        )
+
+    except Exception as exc:
+
+        print(
+            f"Agent initialization error: {exc}"
+        )
+
+
+# ============================================================
+# RESPONSE EXTRACTION
+# ============================================================
+
+def extract_text(value):
+    """
+    Convert LangChain response content into readable text.
+    """
+
+    if value is None:
+        return ""
+
+    if isinstance(value, str):
+        return value.strip()
+
+    if isinstance(value, list):
+
+        parts = []
+
+        for item in value:
+
+            if isinstance(item, str):
+
+                parts.append(item)
+
+            elif isinstance(item, dict):
+
+                text = item.get("text")
+
+                if text:
+                    parts.append(str(text))
+
+        return " ".join(parts).strip()
+
+    if isinstance(value, dict):
+
+        if "text" in value:
+            return str(value["text"]).strip()
+
+        if "content" in value:
+            return extract_text(
+                value["content"]
+            )
+
+        return str(value).strip()
+
+    return str(value).strip()
+
+
+# ============================================================
+# ASK APEX
+# ============================================================
+
+def ask_apex(user_text: str) -> str:
+
+    if not agent:
+
+        return (
+            "Gemini AI is not configured. "
+            "Please check your API key."
+        )
+
+    try:
+
+        print("\n🧠 Apex is thinking...")
 
         result = agent.invoke(
-
             {
-                "messages":
-                    conversation
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": user_text
+                    }
+                ]
             }
-
         )
-
 
         messages = result.get(
             "messages",
             []
         )
 
+        if not messages:
 
-        if messages:
-
-            conversation = messages
-
-            final_message = messages[-1]
-
-            answer = extract_text(
-                final_message
+            return (
+                "I couldn't generate a response."
             )
 
+        # Usually the final AI message is the last message.
+        for message in reversed(messages):
 
-            if answer:
+            content = getattr(
+                message,
+                "content",
+                None
+            )
 
-                return answer
+            text = extract_text(content)
 
+            if text:
+
+                return text
 
         return (
-            "I completed the request, "
-            "but I don't have a spoken response."
+            "I couldn't generate a readable response."
         )
 
+    except Exception as exc:
 
-    except Exception as error:
+        error_text = str(exc)
 
         print(
-            "\nAgent Error:",
-            error
+            f"\nAgent Error: {error_text}"
         )
 
-        # Do not keep a failed user turn in memory.
-        if conversation and conversation[-1].get("role") == "user":
-            conversation.pop()
+        error_lower = error_text.lower()
 
-        error_text = str(error).lower()
+        if (
+            "429" in error_lower
+            or "resource_exhausted" in error_lower
+            or "quota" in error_lower
+        ):
 
-        if "429" in error_text or "resource_exhausted" in error_text or "quota" in error_text:
-            return "Gemini's free-tier limit was reached. Please try again later."
+            return (
+                "Gemini's free-tier request limit "
+                "was reached. Please try again shortly."
+            )
 
-        if "503" in error_text or "unavailable" in error_text:
-            return "Gemini is temporarily busy. Please try again in a moment."
+        if (
+            "503" in error_lower
+            or "unavailable" in error_lower
+        ):
+
+            return (
+                "Gemini is temporarily unavailable. "
+                "Please try again shortly."
+            )
+
+        if (
+            "ssl" in error_lower
+            or "unexpected_eof" in error_lower
+        ):
+
+            return (
+                "The connection to the AI service "
+                "was interrupted. Please try again."
+            )
 
         return (
-            "Sorry, I ran into a temporary problem "
-            "while processing that request."
+            "Sorry, I ran into a temporary problem. "
+            "Please try again."
         )
 
 
-# ==========================================================
-# RESET CONVERSATION
-# ==========================================================
-
-def reset_conversation():
-    """Clear Apex's conversation memory."""
-    global conversation
-    conversation = []
-
-
-# ==========================================================
-# MAIN PROGRAM
-# ==========================================================
+# ============================================================
+# MAIN
+# ============================================================
 
 def main():
 
-    speak(
-        "Hello! I am Apex, your intelligent AI assistant. "
-        "What would you like me to do?"
+    print(
+        "\n=============================================="
     )
 
+    print(
+        "        🤖 APEX AI — VOICE ASSISTANT"
+    )
+
+    print(
+        "==============================================\n"
+    )
+
+    speak(
+        "Hello! I am Apex, your intelligent AI voice assistant. "
+        "How can I help you?"
+    )
 
     while True:
 
-        command = listen()
+        user_text = listen()
 
-
-        if not command:
+        if not user_text:
 
             continue
 
+        # ----------------------------------------------------
+        # DIRECT COMMANDS
+        # ----------------------------------------------------
 
-        lower_command = (
-            command
-            .lower()
-            .strip()
+        direct_result = handle_direct_command(
+            user_text
         )
 
-
-        exit_commands = [
-
-            "exit",
-
-            "quit",
-
-            "goodbye",
-
-            "bye",
-
-            "stop assistant",
-
-            "close assistant",
-        ]
-
-
-        if lower_command in exit_commands:
+        if direct_result == "__EXIT__":
 
             speak(
-                "Goodbye! Apex is shutting down."
+                "Goodbye! Have a great day."
             )
 
             break
 
+        if direct_result:
+
+            if direct_result.startswith(
+                "OPEN_URL:"
+            ):
+
+                url = direct_result[
+                    len("OPEN_URL:"):
+                ]
+
+                try:
+
+                    webbrowser.open(url)
+
+                    speak(
+                        "Opening it in your browser."
+                    )
+
+                except Exception as exc:
+
+                    print(
+                        f"Browser Error: {exc}"
+                    )
+
+                    speak(
+                        "I couldn't open the browser."
+                    )
+
+            else:
+
+                speak(direct_result)
+
+            continue
+
+        # ----------------------------------------------------
+        # GEMINI
+        # ----------------------------------------------------
 
         response = ask_apex(
-            command
+            user_text
         )
 
-        if response.startswith("OPEN_URL:"):
-            lines = response.split("\n", 1)
-            url = lines[0].replace("OPEN_URL:", "", 1).strip()
-            message = lines[1].strip() if len(lines) > 1 else "Done."
+        if not response:
+
+            continue
+
+        # ----------------------------------------------------
+        # OPEN URL RESPONSE
+        # ----------------------------------------------------
+
+        if response.startswith(
+            "OPEN_URL:"
+        ):
+
+            url = response[
+                len("OPEN_URL:"):
+            ]
 
             try:
+
                 webbrowser.open(url)
-            except Exception as error:
-                print("Browser Error:", error)
 
-            speak(message)
-        else:
-            speak(response)
+                speak(
+                    "Opening it in your browser."
+                )
+
+            except Exception as exc:
+
+                print(
+                    f"Browser Error: {exc}"
+                )
+
+                speak(
+                    "I couldn't open the browser."
+                )
+
+            continue
+
+        # ----------------------------------------------------
+        # NORMAL RESPONSE
+        # ----------------------------------------------------
+
+        speak(response)
 
 
-# ==========================================================
-# RUN
-# ==========================================================
+# ============================================================
+# START
+# ============================================================
 
 if __name__ == "__main__":
-
     main()
