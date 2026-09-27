@@ -10,7 +10,7 @@ BMI Tracker allows users to calculate their BMI, understand their BMI category, 
 
 ## 🌐 Live Web Demo
 
-A browser-based version of BMI Tracker is also available through GitHub Pages.
+A browser-based version of BMI Tracker is available through GitHub Pages.
 
 The web demo provides:
 
@@ -23,10 +23,10 @@ The web demo provides:
 - ⚠️ Input validation
 - 📱 Responsive interface
 
-> **Note:** The GitHub Pages version is a web demonstration of the project.  
+> **Note:** The GitHub Pages version is a web demonstration of the project.
 > The official Advanced internship implementation is the Python desktop application using Tkinter, SQLite, and Matplotlib.
 
-**Live Demo:** Add GitHub Pages link after deployment.
+**Live Demo:** Add the GitHub Pages link here after deployment.
 
 ---
 
@@ -90,6 +90,8 @@ Users can view previously saved BMI measurements, including:
 ### 📈 BMI Trend
 
 Historical BMI measurements can be visualized through a Matplotlib line chart.
+
+This makes it possible to see how a user's BMI changes over time.
 
 ### 🎨 Colour-Coded Results
 
@@ -177,84 +179,148 @@ Python-Task2-BMICalculator/
 ├── README.md
 ├── requirements.txt
 │
+├── docs/
+│   └── index.html
+│
 └── web/
     └── index.html
-    app.py
+```
+
+### `app.py`
 
 Main Python desktop application containing the graphical interface, BMI calculation, validation, user interaction, history display, and trend visualization.
 
-database.py
+### `database.py`
 
 Handles SQLite database operations including user management, BMI record storage, history retrieval, and trend data retrieval.
 
-requirements.txt
+### `requirements.txt`
 
 Contains the Python packages required by the desktop application.
 
-web/index.html
+### `docs/index.html`
 
-Browser-based BMI Tracker demonstration designed for GitHub Pages.
-▶️ Running the Desktop Application
+GitHub Pages version of the BMI Tracker web demonstration.
+
+### `web/index.html`
+
+Browser-based BMI Tracker development and local demo version.
+
+---
+
+## ▶️ Running the Desktop Application
 
 This project includes an official Python desktop GUI application.
 
 To run it locally:
 
+```bash
 python app.py
+```
 
 The BMI Tracker graphical application will open automatically.
 
-🌐 Running the Web Demo Locally
+---
 
-Open the web folder and run:
+## 🌐 Running the Web Demo Locally
 
+Open the `web` folder and run:
+
+```bash
 python -m http.server 8000
+```
 
 Then open:
 
+```text
 http://localhost:8000
-🧪 Tested Functionality
+```
 
-The desktop application has been tested for:
+---
 
-BMI calculation
-BMI rounding
-Underweight classification
-Normal classification
-Overweight classification
-Obese classification
-BMI category boundaries
-Invalid text input
-Zero values
-Negative values
-Multiple users
-Saving BMI records
-Viewing history
-SQLite persistence
-BMI trend visualization
-Database operations
-Error handling
+## 🧪 Tested Functionality
 
-The web demo has also been tested for BMI calculation, saving records, history display, validation, and trend visualization.
-📌 Internship Task
+### Desktop Application
 
-Organization: Oasis Infobyte
+The application has been tested for:
 
-Program: Python Programming Internship
+- BMI calculation
+- BMI rounding
+- Underweight classification
+- Normal classification
+- Overweight classification
+- Obese classification
+- BMI category boundaries
+- Invalid text input
+- Zero values
+- Negative values
+- Multiple users
+- Saving BMI records
+- Viewing history
+- SQLite persistence
+- BMI trend visualization
+- Database operations
+- Error handling
 
-Task: Task 2 — BMI Calculator
+### Web Demo
 
-Level: Advanced
+The web demo has been tested for:
 
-Track: Python Programming
+- BMI calculation
+- Saving records
+- History display
+- Input validation
+- BMI trend visualization
+- Responsive interface
+- Browser-based data persistence
 
-👩‍💻 Author
+---
 
-Taqwa Asif
+## 📸 Screenshots
+
+Screenshots can be added here to demonstrate the project interface and functionality.
+
+### BMI Calculator
+
+_Add application screenshot here._
+
+### BMI History
+
+_Add history screenshot here._
+
+### BMI Trend
+
+_Add trend graph screenshot here._
+
+### Web Demo
+
+_Add GitHub Pages screenshot here._
+
+---
+
+## 📌 Internship Task
+
+**Organization:** Oasis Infobyte
+
+**Program:** Python Programming Internship
+
+**Task:** Task 2 — BMI Calculator
+
+**Level:** Advanced
+
+**Track:** Python Programming
+
+---
+
+## 👩‍💻 Author
+
+**Taqwa Asif**
 
 AI Agents • Chatbots • Generative AI • Machine Learning • Frontend Development
 
-⚠️ Disclaimer
+---
+
+## ⚠️ Disclaimer
 
 This project is an educational BMI calculation and tracking application created for the Oasis Infobyte internship.
 
