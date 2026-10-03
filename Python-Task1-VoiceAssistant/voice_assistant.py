@@ -1736,3 +1736,17 @@ def main():
 
 if __name__ == "__main__":
     main()
+# ============================================================
+# STREAMLIT COMPATIBILITY
+# ============================================================
+
+def reset_conversation():
+    """
+    Reset conversational state for the web interface.
+
+    The desktop assistant does not maintain a persistent
+    conversation history, so there is nothing to clear here.
+    This function exists for Streamlit compatibility.
+    """
+    return None
+
