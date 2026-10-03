@@ -296,7 +296,7 @@ def process_audio(audio_bytes: bytes) -> str:
     recognizer = sr.Recognizer()
     with sr.AudioFile(io.BytesIO(audio_bytes)) as source:
         audio_data = recognizer.record(source)
-    return recognizer.recognize_google(audio_data)
+    return recognizer.recognize_google(audio_data, language="en-US")
 
 
 def browser_speak(text: str):
