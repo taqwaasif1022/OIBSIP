@@ -1,8 +1,30 @@
+import os
 import hashlib
 import io
 import speech_recognition as sr
 import streamlit as st
 import streamlit.components.v1 as components
+
+# ============================================================
+# STREAMLIT CLOUD SECRETS
+# ============================================================
+
+try:
+    if "GEMINI_API_KEY" in st.secrets:
+        os.environ["GEMINI_API_KEY"] = st.secrets["GEMINI_API_KEY"]
+
+    if "TAVILY_API_KEY" in st.secrets:
+        os.environ["TAVILY_API_KEY"] = st.secrets["TAVILY_API_KEY"]
+
+    if "GMAIL_ADDRESS" in st.secrets:
+        os.environ["GMAIL_ADDRESS"] = st.secrets["GMAIL_ADDRESS"]
+
+    if "GMAIL_APP_PASSWORD" in st.secrets:
+        os.environ["GMAIL_APP_PASSWORD"] = st.secrets["GMAIL_APP_PASSWORD"]
+
+except Exception as exc:
+    st.error("Cloud secrets could not be loaded.")
+
 from voice_assistant import ask_apex, speak, reset_conversation
 
 # --------------------------------------------------
