@@ -1553,16 +1553,16 @@ def ask_apex(user_text: str) -> str:
 
     except Exception as exc:
 
-    error_text = str(exc)
+        error_text = str(exc)
 
-    print(
-        f"\nAgent Error: {type(exc).__name__}: {error_text}",
-        flush=True
-    )
+        print(
+            f"\nAgent Error: {type(exc).__name__}: {error_text}",
+            flush=True
+        )
 
-    return (
-        f"DEBUG ERROR: {type(exc).__name__}: {error_text}"
-    )
+        return (
+            f"DEBUG ERROR: {type(exc).__name__}: {error_text}"
+        )
 
         error_lower = error_text.lower()
 
