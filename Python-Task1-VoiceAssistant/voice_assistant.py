@@ -1497,110 +1497,290 @@ def extract_text(value):
 # ASK APEX
 # ============================================================
 
-def ask_apex(user_text: str) -> str:
+def _fallback_from_tools(user_text: str) -> str:
+    """
+    Fallback router used when Gemini is unavailable or quota-limited.
 
-    if not agent:
+    Uses the assistant's existing tools instead of exposing
+    Gemini/API errors to the user.
+    """
 
-        return (
-            "Gemini AI is not configured. "
-            "Please check your API key."
+    query = user_text.strip()
+    lower = query.lower()
+
+    if not query:
+        return "Please tell me what you would like me to do."
+
+    # --------------------------------------------------------
+    # WEATHER
+    # --------------------------------------------------------
+
+    weather_words = (
+        "weather",
+        "temperature",
+        "forecast",
+        "rain",
+        "raining",
+        "humidity",
+        "wind",
+        "hot",
+        "cold"
+    )
+
+    if any(word in lower for word in weather_words):
+
+        weather_match = re.search(
+            r"(?:in|for|at)\s+(.+)$",
+            query,
+            re.IGNORECASE
         )
+
+        if weather_match:
+            city = weather_match.group(1).strip()
+        else:
+            city = query
+
+            for word in weather_words:
+                city = re.sub(
+                    rf"\b{re.escape(word)}\b",
+                    "",
+                    city,
+                    flags=re.IGNORECASE
+                )
+
+            city = re.sub(
+                r"\b(what|is|the|today|now|current|please|tell|me)\b",
+                "",
+                city,
+                flags=re.IGNORECASE
+            ).strip()
+
+        if city:
+            try:
+                result = get_weather(city)
+                if result:
+                    return result
+            except Exception as exc:
+                print(
+                    f"Weather fallback error: {type(exc).__name__}: {exc}",
+                    flush=True
+                )
+
+    # --------------------------------------------------------
+    # NEWS
+    # --------------------------------------------------------
+
+    news_words = (
+        "latest news",
+        "recent news",
+        "breaking news",
+        "news about",
+        "news on"
+    )
+
+    if any(word in lower for word in news_words):
+
+        news_query = re.sub(
+            r"\b(latest|recent|breaking|news|about|on|tell|me|the)\b",
+            " ",
+            query,
+            flags=re.IGNORECASE
+        )
+
+        news_query = re.sub(
+            r"\s+",
+            " ",
+            news_query
+        ).strip()
+
+        if not news_query:
+            news_query = "latest news"
+
+        try:
+            result = search_news.invoke(
+                {"query": news_query}
+            )
+
+            if result:
+                return result
+
+        except Exception as exc:
+            print(
+                f"News fallback error: {type(exc).__name__}: {exc}",
+                flush=True
+            )
+
+    # --------------------------------------------------------
+    # GENERAL WEB SEARCH
+    # --------------------------------------------------------
 
     try:
 
-        print("\n🧠 Apex is thinking...")
-
-        result = agent.invoke(
-            {
-                "messages": [
-                    {
-                        "role": "user",
-                        "content": user_text
-                    }
-                ]
-            }
+        result = web_search.invoke(
+            {"query": query}
         )
 
-        messages = result.get(
-            "messages",
-            []
-        )
-
-        if not messages:
-
+        if result:
             return (
-                "I couldn't generate a response."
+                "I couldn't use Gemini right now, so I used "
+                "web search to find information for you.\n\n"
+                f"{result}"
             )
-
-        # Usually the final AI message is the last message.
-        for message in reversed(messages):
-
-            content = getattr(
-                message,
-                "content",
-                None
-            )
-
-            text = extract_text(content)
-
-            if text:
-
-                return text
-
-        return (
-            "I couldn't generate a readable response."
-        )
 
     except Exception as exc:
 
-        error_text = str(exc)
-
         print(
-            f"\nAgent Error: {type(exc).__name__}: {error_text}",
+            f"Web fallback error: {type(exc).__name__}: {exc}",
             flush=True
         )
 
-        return (
-            f"DEBUG ERROR: {type(exc).__name__}: {error_text}"
+    # --------------------------------------------------------
+    # EVERYTHING FAILED
+    # --------------------------------------------------------
+
+    return (
+        "Gemini is temporarily unavailable and I couldn't "
+        "retrieve a reliable answer from my other tools. "
+        "Please try again in a little while."
+    )
+
+
+def ask_apex(user_text: str) -> str:
+
+    user_text = user_text.strip()
+
+    if not user_text:
+        return "Please tell me what you would like me to do."
+
+    # --------------------------------------------------------
+    # DIRECT COMMANDS
+    # --------------------------------------------------------
+
+    try:
+
+        direct_result = handle_direct_command(user_text)
+
+        if direct_result == "__EXIT__":
+            return "__EXIT__"
+
+        if direct_result:
+            return direct_result
+
+    except Exception as exc:
+
+        print(
+            f"Direct command error: {type(exc).__name__}: {exc}",
+            flush=True
         )
 
-        error_lower = error_text.lower()
+    # --------------------------------------------------------
+    # GEMINI
+    # --------------------------------------------------------
 
-        if (
-            "429" in error_lower
-            or "resource_exhausted" in error_lower
-            or "quota" in error_lower
-        ):
+    if agent:
 
-            return (
-                "Gemini's free-tier request limit "
-                "was reached. Please try again shortly."
+        try:
+
+            print(
+                "\nApex is thinking...",
+                flush=True
             )
 
-        if (
-            "503" in error_lower
-            or "unavailable" in error_lower
-        ):
-
-            return (
-                "Gemini is temporarily unavailable. "
-                "Please try again shortly."
+            result = agent.invoke(
+                {
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": user_text
+                        }
+                    ]
+                }
             )
 
-        if (
-            "ssl" in error_lower
-            or "unexpected_eof" in error_lower
-        ):
-
-            return (
-                "The connection to the AI service "
-                "was interrupted. Please try again."
+            messages = result.get(
+                "messages",
+                []
             )
 
-        return (
-            "Sorry, I ran into a temporary problem. "
-            "Please try again."
-        )
+            if messages:
+
+                for message in reversed(messages):
+
+                    content = getattr(
+                        message,
+                        "content",
+                        None
+                    )
+
+                    text = extract_text(content)
+
+                    if text:
+                        return text
+
+            print(
+                "Gemini returned no readable response. "
+                "Using fallback tools.",
+                flush=True
+            )
+
+        except Exception as exc:
+
+            error_text = str(exc)
+            error_lower = error_text.lower()
+
+            print(
+                f"Agent Error: {type(exc).__name__}: {error_text}",
+                flush=True
+            )
+
+            # ------------------------------------------------
+            # GEMINI QUOTA / RATE LIMIT
+            # ------------------------------------------------
+
+            if (
+                "429" in error_lower
+                or "resource_exhausted" in error_lower
+                or "quota" in error_lower
+                or "rate limit" in error_lower
+            ):
+
+                print(
+                    "Gemini quota/rate limit detected. "
+                    "Switching to fallback tools.",
+                    flush=True
+                )
+
+            # ------------------------------------------------
+            # OTHER TEMPORARY GEMINI FAILURES
+            # ------------------------------------------------
+
+            elif (
+                "503" in error_lower
+                or "unavailable" in error_lower
+                or "ssl" in error_lower
+                or "unexpected_eof" in error_lower
+                or "timeout" in error_lower
+                or "connection" in error_lower
+            ):
+
+                print(
+                    "Gemini is temporarily unavailable. "
+                    "Switching to fallback tools.",
+                    flush=True
+                )
+
+            else:
+
+                print(
+                    "Gemini failed. Switching to fallback tools.",
+                    flush=True
+                )
+
+    # --------------------------------------------------------
+    # FALLBACK
+    # --------------------------------------------------------
+
+    return _fallback_from_tools(user_text)
 
 
 # ============================================================
