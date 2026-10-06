@@ -1,5 +1,0 @@
-# No third-party packages are required.
-# This project uses only the Python standard library (Python 3.8+):
-#   socket, threading, json, sqlite3, hashlib, hmac, tkinter, queue, argparse
-# Tkinter ships with Python on Windows/macOS. On Debian/Ubuntu install it with:
-#   sudo apt install python3-tk
