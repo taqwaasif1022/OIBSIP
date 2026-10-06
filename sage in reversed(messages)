@@ -1,0 +1,363 @@
+warning: in the working copy of 'Python-Task1-VoiceAssistant/voice_assistant.py', LF will be replaced by CRLF the next time Git touches it
+[1mdiff --git a/Python-Task1-VoiceAssistant/voice_assistant.py b/Python-Task1-VoiceAssistant/voice_assistant.py[m
+[1mindex c2353ef..5ba8fba 100644[m
+[1m--- a/Python-Task1-VoiceAssistant/voice_assistant.py[m
+[1m+++ b/Python-Task1-VoiceAssistant/voice_assistant.py[m
+[36m@@ -1497,110 +1497,290 @@[m [mdef extract_text(value):[m
+ # ASK APEX[m
+ # ============================================================[m
+ [m
+[31m-def ask_apex(user_text: str) -> str:[m
+[32m+[m[32mdef _fallback_from_tools(user_text: str) -> str:[m
+[32m+[m[32m    """[m
+[32m+[m[32m    Fallback router used when Gemini is unavailable or quota-limited.[m
+ [m
+[31m-    if not agent:[m
+[32m+[m[32m    Uses the assistant's existing tools instead of exposing[m
+[32m+[m[32m    Gemini/API errors to the user.[m
+[32m+[m[32m    """[m
+ [m
+[31m-        return ([m
+[31m-            "Gemini AI is not configured. "[m
+[31m-            "Please check your API key."[m
+[31m-        )[m
+[32m+[m[32m    query = user_text.strip()[m
+[32m+[m[32m    lower = query.lower()[m
+ [m
+[31m-    try:[m
+[32m+[m[32m    if not query:[m
+[32m+[m[32m        return "Please tell me what you would like me to do."[m
+ [m
+[31m-        print("\n🧠 Apex is thinking...")[m
+[32m+[m[32m    # --------------------------------------------------------[m
+[32m+[m[32m    # WEATHER[m
+[32m+[m[32m    # --------------------------------------------------------[m
+ [m
+[31m-        result = agent.invoke([m
+[31m-            {[m
+[31m-                "messages": [[m
+[31m-                    {[m
+[31m-                        "role": "user",[m
+[31m-                        "content": user_text[m
+[31m-                    }[m
+[31m-                ][m
+[31m-            }[m
+[32m+[m[32m    weather_words = ([m
+[32m+[m[32m        "weather",[m
+[32m+[m[32m        "temperature",[m
+[32m+[m[32m        "forecast",[m
+[32m+[m[32m        "rain",[m
+[32m+[m[32m        "raining",[m
+[32m+[m[32m        "humidity",[m
+[32m+[m[32m        "wind",[m
+[32m+[m[32m        "hot",[m
+[32m+[m[32m        "cold"[m
+[32m+[m[32m    )[m
+[32m+[m
+[32m+[m[32m    if any(word in lower for word in weather_words):[m
+[32m+[m
+[32m+[m[32m        weather_match = re.search([m
+[32m+[m[32m            r"(?:in|for|at)\s+(.+)$",[m
+[32m+[m[32m            query,[m
+[32m+[m[32m            re.IGNORECASE[m
+         )[m
+ [m
+[31m-        messages = result.get([m
+[31m-            "messages",[m
+[31m-            [][m
+[32m+[m[32m        if weather_match:[m
+[32m+[m[32m            city = weather_match.group(1).strip()[m
+[32m+[m[32m        else:[m
+[32m+[m[32m            city = query[m
+[32m+[m
+[32m+[m[32m            for word in weather_words:[m
+[32m+[m[32m                city = re.sub([m
+[32m+[m[32m                    rf"\b{re.escape(word)}\b",[m
+[32m+[m[32m                    "",[m
+[32m+[m[32m                    city,[m
+[32m+[m[32m                    flags=re.IGNORECASE[m
+[32m+[m[32m                )[m
+[32m+[m
+[32m+[m[32m            city = re.sub([m
+[32m+[m[32m                r"\b(what|is|the|today|now|current|please|tell|me)\b",[m
+[32m+[m[32m                "",[m
+[32m+[m[32m                city,[m
+[32m+[m[32m                flags=re.IGNORECASE[m
+[32m+[m[32m            ).strip()[m
+[32m+[m
+[32m+[m[32m        if city:[m
+[32m+[m[32m            try:[m
+[32m+[m[32m                result = get_weather(city)[m
+[32m+[m[32m                if result:[m
+[32m+[m[32m                    return result[m
+[32m+[m[32m            except Exception as exc:[m
+[32m+[m[32m                print([m
+[32m+[m[32m                    f"Weather fallback error: {type(exc).__name__}: {exc}",[m
+[32m+[m[32m                    flush=True[m
+[32m+[m[32m                )[m
+[32m+[m
+[32m+[m[32m    # --------------------------------------------------------[m
+[32m+[m[32m    # NEWS[m
+[32m+[m[32m    # --------------------------------------------------------[m
+[32m+[m
+[32m+[m[32m    news_words = ([m
+[32m+[m[32m        "latest news",[m
+[32m+[m[32m        "recent news",[m
+[32m+[m[32m        "breaking news",[m
+[32m+[m[32m        "news about",[m
+[32m+[m[32m        "news on"[m
+[32m+[m[32m    )[m
+[32m+[m
+[32m+[m[32m    if any(word in lower for word in news_words):[m
+[32m+[m
+[32m+[m[32m        news_query = re.sub([m
+[32m+[m[32m            r"\b(latest|recent|breaking|news|about|on|tell|me|the)\b",[m
+[32m+[m[32m            " ",[m
+[32m+[m[32m            query,[m
+[32m+[m[32m            flags=re.IGNORECASE[m
+         )[m
+ [m
+[31m-        if not messages:[m
+[32m+[m[32m        news_query = re.sub([m
+[32m+[m[32m            r"\s+",[m
+[32m+[m[32m            " ",[m
+[32m+[m[32m            news_query[m
+[32m+[m[32m        ).strip()[m
+[32m+[m
+[32m+[m[32m        if not news_query:[m
+[32m+[m[32m            news_query = "latest news"[m
+ [m
+[31m-            return ([m
+[31m-                "I couldn't generate a response."[m
+[32m+[m[32m        try:[m
+[32m+[m[32m            result = search_news.invoke([m
+[32m+[m[32m                {"query": news_query}[m
+             )[m
+ [m
+[31m-        # Usually the final AI message is the last message.[m
+[31m-        for message in reversed(messages):[m
+[32m+[m[32m            if result:[m
+[32m+[m[32m                return result[m
+ [m
+[31m-            content = getattr([m
+[31m-                message,[m
+[31m-                "content",[m
+[31m-                None[m
+[32m+[m[32m        except Exception as exc:[m
+[32m+[m[32m            print([m
+[32m+[m[32m                f"News fallback error: {type(exc).__name__}: {exc}",[m
+[32m+[m[32m                flush=True[m
+             )[m
+ [m
+[31m-            text = extract_text(content)[m
+[31m-[m
+[31m-            if text:[m
+[32m+[m[32m    # --------------------------------------------------------[m
+[32m+[m[32m    # GENERAL WEB SEARCH[m
+[32m+[m[32m    # --------------------------------------------------------[m
+ [m
+[31m-                return text[m
+[32m+[m[32m    try:[m
+ [m
+[31m-        return ([m
+[31m-            "I couldn't generate a readable response."[m
+[32m+[m[32m        result = web_search.invoke([m
+[32m+[m[32m            {"query": query}[m
+         )[m
+ [m
+[31m-    except Exception as exc:[m
+[32m+[m[32m        if result:[m
+[32m+[m[32m            return ([m
+[32m+[m[32m                "I couldn't use Gemini right now, so I used "[m
+[32m+[m[32m                "web search to find information for you.\n\n"[m
+[32m+[m[32m                f"{result}"[m
+[32m+[m[32m            )[m
+ [m
+[31m-        error_text = str(exc)[m
+[32m+[m[32m    except Exception as exc:[m
+ [m
+         print([m
+[31m-            f"\nAgent Error: {type(exc).__name__}: {error_text}",[m
+[32m+[m[32m            f"Web fallback error: {type(exc).__name__}: {exc}",[m
+             flush=True[m
+         )[m
+ [m
+[31m-        return ([m
+[31m-            f"DEBUG ERROR: {type(exc).__name__}: {error_text}"[m
+[32m+[m[32m    # --------------------------------------------------------[m
+[32m+[m[32m    # EVERYTHING FAILED[m
+[32m+[m[32m    # --------------------------------------------------------[m
+[32m+[m
+[32m+[m[32m    return ([m
+[32m+[m[32m        "Gemini is temporarily unavailable and I couldn't "[m
+[32m+[m[32m        "retrieve a reliable answer from my other tools. "[m
+[32m+[m[32m        "Please try again in a little while."[m
+[32m+[m[32m    )[m
+[32m+[m
+[32m+[m
+[32m+[m[32mdef ask_apex(user_text: str) -> str:[m
+[32m+[m
+[32m+[m[32m    user_text = user_text.strip()[m
+[32m+[m
+[32m+[m[32m    if not user_text:[m
+[32m+[m[32m        return "Please tell me what you would like me to do."[m
+[32m+[m
+[32m+[m[32m    # --------------------------------------------------------[m
+[32m+[m[32m    # DIRECT COMMANDS[m
+[32m+[m[32m    # --------------------------------------------------------[m
+[32m+[m
+[32m+[m[32m    try:[m
+[32m+[m
+[32m+[m[32m        direct_result = handle_direct_command(user_text)[m
+[32m+[m
+[32m+[m[32m        if direct_result == "__EXIT__":[m
+[32m+[m[32m            return "__EXIT__"[m
+[32m+[m
+[32m+[m[32m        if direct_result:[m
+[32m+[m[32m            return direct_result[m
+[32m+[m
+[32m+[m[32m    except Exception as exc:[m
+[32m+[m
+[32m+[m[32m        print([m
+[32m+[m[32m            f"Direct command error: {type(exc).__name__}: {exc}",[m
+[32m+[m[32m            flush=True[m
+         )[m
+ [m
+[31m-        error_lower = error_text.lower()[m
+[32m+[m[32m    # --------------------------------------------------------[m
+[32m+[m[32m    # GEMINI[m
+[32m+[m[32m    # --------------------------------------------------------[m
+ [m
+[31m-        if ([m
+[31m-            "429" in error_lower[m
+[31m-            or "resource_exhausted" in error_lower[m
+[31m-            or "quota" in error_lower[m
+[31m-        ):[m
+[32m+[m[32m    if agent:[m
+ [m
+[31m-            return ([m
+[31m-                "Gemini's free-tier request limit "[m
+[31m-                "was reached. Please try again shortly."[m
+[32m+[m[32m        try:[m
+[32m+[m
+[32m+[m[32m            print([m
+[32m+[m[32m                "\nApex is thinking...",[m
+[32m+[m[32m                flush=True[m
+             )[m
+ [m
+[31m-        if ([m
+[31m-            "503" in error_lower[m
+[31m-            or "unavailable" in error_lower[m
+[31m-        ):[m
+[32m+[m[32m            result = agent.invoke([m
+[32m+[m[32m                {[m
+[32m+[m[32m                    "messages": [[m
+[32m+[m[32m                        {[m
+[32m+[m[32m                            "role": "user",[m
+[32m+[m[32m                            "content": user_text[m
+[32m+[m[32m                        }[m
+[32m+[m[32m                    ][m
+[32m+[m[32m                }[m
+[32m+[m[32m            )[m
+ [m
+[31m-            return ([m
+[31m-                "Gemini is temporarily unavailable. "[m
+[31m-                "Please try again shortly."[m
+[32m+[m[32m            messages = result.get([m
+[32m+[m[32m                "messages",[m
+[32m+[m[32m                [][m
+             )[m
+ [m
+[31m-        if ([m
+[31m-            "ssl" in error_lower[m
+[31m-            or "unexpected_eof" in error_lower[m
+[31m-        ):[m
+[32m+[m[32m            if messages:[m
+ [m
+[31m-            return ([m
+[31m-                "The connection to the AI service "[m
+[31m-                "was interrupted. Please try again."[m
+[32m+[m[32m                for message in reversed(messages):[m
+[32m+[m
+[32m+[m[32m                    content = getattr([m
+[32m+[m[32m                        message,[m
+[32m+[m[32m                        "content",[m
+[32m+[m[32m                        None[m
+[32m+[m[32m                    )[m
+[32m+[m
+[32m+[m[32m                    text = extract_text(content)[m
+[32m+[m
+[32m+[m[32m                    if text:[m
+[32m+[m[32m                        return text[m
+[32m+[m
+[32m+[m[32m            print([m
+[32m+[m[32m                "Gemini returned no readable response. "[m
+[32m+[m[32m                "Using fallback tools.",[m
+[32m+[m[32m                flush=True[m
+             )[m
+ [m
+[31m-        return ([m
+[31m-            "Sorry, I ran into a temporary problem. "[m
+[31m-            "Please try again."[m
+[31m-        )[m
+[32m+[m[32m        except Exception as exc:[m
+[32m+[m
+[32m+[m[32m            error_text = str(exc)[m
+[32m+[m[32m            error_lower = error_text.lower()[m
+[32m+[m
+[32m+[m[32m            print([m
+[32m+[m[32m                f"Agent Error: {type(exc).__name__}: {error_text}",[m
+[32m+[m[32m                flush=True[m
+[32m+[m[32m            )[m
+[32m+[m
+[32m+[m[32m            # ------------------------------------------------[m
+[32m+[m[32m            # GEMINI QUOTA / RATE LIMIT[m
+[32m+[m[32m            # ------------------------------------------------[m
+[32m+[m
+[32m+[m[32m            if ([m
+[32m+[m[32m                "429" in error_lower[m
+[32m+[m[32m                or "resource_exhausted" in error_lower[m
+[32m+[m[32m                or "quota" in error_lower[m
+[32m+[m[32m                or "rate limit" in error_lower[m
+[32m+[m[32m            ):[m
+[32m+[m
+[32m+[m[32m                print([m
+[32m+[m[32m                    "Gemini quota/rate limit detected. "[m
+[32m+[m[32m                    "Switching to fallback tools.",[m
+[32m+[m[32m                    flush=True[m
+[32m+[m[32m                )[m
+[32m+[m
+[32m+[m[32m            # ------------------------------------------------[m
+[32m+[m[32m            # OTHER TEMPORARY GEMINI FAILURES[m
+[32m+[m[32m            # ------------------------------------------------[m
+[32m+[m
+[32m+[m[32m            elif ([m
+[32m+[m[32m                "503" in error_lower[m
+[32m+[m[32m                or "unavailable" in error_lower[m
+[32m+[m[32m                or "ssl" in error_lower[m
+[32m+[m[32m                or "unexpected_eof" in error_lower[m
+[32m+[m[32m                or "timeout" in error_lower[m
+[32m+[m[32m                or "connection" in error_lower[m
+[32m+[m[32m            ):[m
+[32m+[m
+[32m+[m[32m                print([m
+[32m+[m[32m                    "Gemini is temporarily unavailable. "[m
+[32m+[m[32m                    "Switching to fallback tools.",[m
+[32m+[m[32m                    flush=True[m
+[32m+[m[32m                )[m
+[32m+[m
+[32m+[m[32m            else:[m
+[32m+[m
+[32m+[m[32m                print([m
+[32m+[m[32m                    "Gemini failed. Switching to fallback tools.",[m
+[32m+[m[32m                    flush=True[m
+[32m+[m[32m                )[m
+[32m+[m
+[32m+[m[32m    # --------------------------------------------------------[m
+[32m+[m[32m    # FALLBACK[m
+[32m+[m[32m    # --------------------------------------------------------[m
+[32m+[m
+[32m+[m[32m    return _fallback_from_tools(user_text)[m
+ [m
+ [m
+ # ============================================================[m

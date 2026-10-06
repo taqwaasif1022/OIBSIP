@@ -1,0 +1,114 @@
+[1mdiff --git a/Python-Task1-VoiceAssistant/app.py b/Python-Task1-VoiceAssistant/app.py[m
+[1mindex be8c66f..6fc6c1b 100644[m
+[1m--- a/Python-Task1-VoiceAssistant/app.py[m
+[1m+++ b/Python-Task1-VoiceAssistant/app.py[m
+[36m@@ -1,4 +1,4 @@[m
+[31m-import os[m
+[32m+[m[32m﻿import os[m
+ import hashlib[m
+ import io[m
+ import speech_recognition as sr[m
+[36m@@ -32,7 +32,7 @@[m [mfrom voice_assistant import ask_apex, speak, reset_conversation[m
+ # --------------------------------------------------[m
+ st.set_page_config([m
+     page_title="Voice Personal Assistant",[m
+[31m-    page_icon="🎙️",[m
+[32m+[m[32m    page_icon="ðŸŽ™ï¸",[m
+     layout="wide",[m
+     initial_sidebar_state="collapsed",[m
+ )[m
+[36m@@ -296,7 +296,7 @@[m [mdef process_audio(audio_bytes: bytes) -> str:[m
+     recognizer = sr.Recognizer()[m
+     with sr.AudioFile(io.BytesIO(audio_bytes)) as source:[m
+         audio_data = recognizer.record(source)[m
+[31m-    return recognizer.recognize_google(audio_data)[m
+[32m+[m[32m    return recognizer.recognize_google(audio_data, language="en-US")[m
+ [m
+ [m
+ def browser_speak(text: str):[m
+[36m@@ -412,7 +412,7 @@[m [mif st.session_state.pending_url:[m
+ st.markdown([m
+     """[m
+     <div class="top-status-bar">[m
+[31m-        <div class="brand-title-small">🎙️ VOICELY AI</div>[m
+[32m+[m[32m        <div class="brand-title-small">ðŸŽ™ï¸ VOICELY AI</div>[m
+         <div class="online-indicator">[m
+             <span class="online-pulse-dot"></span>[m
+             Agent Active[m
+[36m@@ -514,13 +514,13 @@[m [mwith col_left:[m
+     command_cols = st.columns(4)[m
+ [m
+     commands = [[m
+[31m-        ("🧠", "Ask Anything", "Explain, solve & learn",[m
+[32m+[m[32m        ("ðŸ§ ", "Ask Anything", "Explain, solve & learn",[m
+          "Explain machine learning in simple words."),[m
+[31m-        ("🔎", "Research Mode", "Find & summarize",[m
+[32m+[m[32m        ("ðŸ”Ž", "Research Mode", "Find & summarize",[m
+          "Research the latest trends in AI agents."),[m
+[31m-        ("💡", "Idea Lab", "Create new ideas",[m
+[32m+[m[32m        ("ðŸ’¡", "Idea Lab", "Create new ideas",[m
+          "Give me 5 unique AI project ideas."),[m
+[31m-        ("⚙️", "Build With AI", "Code & create",[m
+[32m+[m[32m        ("âš™ï¸", "Build With AI", "Code & create",[m
+          "Help me build an AI chatbot with Python."),[m
+     ][m
+ [m
+[36m@@ -547,7 +547,7 @@[m [mwith col_left:[m
+             with st.spinner("Processing voice..."):[m
+                 try:[m
+                     text = process_audio(audio_bytes)[m
+[31m-                    st.toast(f'🎙️ You said: "{text}"')[m
+[32m+[m[32m                    st.toast(f'ðŸŽ™ï¸ You said: "{text}"')[m
+                     run_assistant(text)[m
+                     st.rerun()[m
+                 except Exception:[m
+[36m@@ -556,10 +556,10 @@[m [mwith col_left:[m
+     c1, c2 = st.columns([1.2, 1])[m
+     with c1:[m
+         st.session_state.auto_speak_responses = st.toggle([m
+[31m-            "🔊 Auto Read Aloud", value=st.session_state.auto_speak_responses[m
+[32m+[m[32m            "ðŸ”Š Auto Read Aloud", value=st.session_state.auto_speak_responses[m
+         )[m
+     with c2:[m
+[31m-        if st.button("🗑️ Clear Chat", use_container_width=True):[m
+[32m+[m[32m        if st.button("ðŸ—‘ï¸ Clear Chat", use_container_width=True):[m
+             st.session_state.messages = [][m
+             st.session_state.last_audio_hash = None[m
+             try:[m
+[36m@@ -579,26 +579,26 @@[m [mwith col_right:[m
+             <div class="wave-ring"></div>[m
+             <div class="wave-ring"></div>[m
+             <div class="mic-core-circle">[m
+[31m-                <span class="mic-core-icon">🎙️</span>[m
+[32m+[m[32m                <span class="mic-core-icon">ðŸŽ™ï¸</span>[m
+             </div>[m
+         </div>[m
+         """,[m
+         unsafe_allow_html=True,[m
+     )[m
+ [m
+[31m-    st.markdown("### 💬 Live Conversation")[m
+[32m+[m[32m    st.markdown("### ðŸ’¬ Live Conversation")[m
+ [m
+     chat_box = st.container(height=320)[m
+     with chat_box:[m
+         if not st.session_state.messages:[m
+[31m-            st.info("👋 Tap the mic or click a button above to start chatting.")[m
+[32m+[m[32m            st.info("ðŸ‘‹ Tap the mic or click a button above to start chatting.")[m
+ [m
+         for idx, msg in enumerate(st.session_state.messages):[m
+[31m-            avatar = "👤" if msg["role"] == "user" else "🎙️"[m
+[32m+[m[32m            avatar = "ðŸ‘¤" if msg["role"] == "user" else "ðŸŽ™ï¸"[m
+             with st.chat_message(msg["role"], avatar=avatar):[m
+                 st.write(msg["content"])[m
+                 if msg["role"] == "assistant":[m
+[31m-                    if st.button("🔊 Read", key=f"speak_{idx}"):[m
+[32m+[m[32m                    if st.button("ðŸ”Š Read", key=f"speak_{idx}"):[m
+                         browser_speak(msg["content"])[m
+ [m
+ # Fixed Dark Bottom Chat Input[m
+[36m@@ -606,3 +606,4 @@[m [mprompt = st.chat_input("Type a message or command...")[m
+ if prompt:[m
+     run_assistant(prompt)[m
+     st.rerun()[m
+[41m+[m
