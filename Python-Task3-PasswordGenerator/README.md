@@ -78,16 +78,6 @@ Oasis Infobyte Python Internship – Task 3
 License
 This project is created for educational purposes under the Oasis Infobyte Internship Program.
 
-
----
-
-### Update + Push karne ke commands:
-
-```powershell
-cd C:\Users\Asif\Desktop\OIBSIP
-
-# README update karo (VS Code se paste karke save kar lena pehle)
-git add Python-Task3-PasswordGenerator/README.md
 git commit -m "Update README with Netlify live demo link"
 git push origin main
 
