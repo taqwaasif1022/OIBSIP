@@ -16,13 +16,20 @@ try:
     if "TAVILY_API_KEY" in st.secrets:
         os.environ["TAVILY_API_KEY"] = st.secrets["TAVILY_API_KEY"]
 
+    # NOTE: keep BOTH naming conventions so voice_assistant.py finds them
     if "GMAIL_ADDRESS" in st.secrets:
-        os.environ["GMAIL_ADDRESS"] = st.secrets["GMAIL_ADDRESS"]
+        os.environ["GMAIL_EMAIL"] = st.secrets["GMAIL_ADDRESS"]
 
     if "GMAIL_APP_PASSWORD" in st.secrets:
-        os.environ["GMAIL_APP_PASSWORD"] = st.secrets["GMAIL_APP_PASSWORD"]
+        os.environ["GMAIL_PASSWORD"] = st.secrets["GMAIL_APP_PASSWORD"]
 
-except Exception as exc:
+    if "GMAIL_EMAIL" in st.secrets:
+        os.environ["GMAIL_EMAIL"] = st.secrets["GMAIL_EMAIL"]
+
+    if "GMAIL_PASSWORD" in st.secrets:
+        os.environ["GMAIL_PASSWORD"] = st.secrets["GMAIL_PASSWORD"]
+
+except Exception:
     st.error("Cloud secrets could not be loaded.")
 
 from voice_assistant import ask_apex, speak, reset_conversation
@@ -38,7 +45,7 @@ st.set_page_config(
 )
 
 # --------------------------------------------------
-# STYLES: IMAGE STYLED HERO BANNER & DARK THEME OVERRIDES
+# STYLES
 # --------------------------------------------------
 st.markdown(
     """
@@ -50,25 +57,20 @@ st.markdown(
         font-family: 'Plus Jakarta Sans', sans-serif;
     }
 
-    /* Deep Space Dark Background */
     .stApp {
         background: radial-gradient(circle at 80% 50%, #150628 0%, #0c0217 50%, #05010a 100%);
         background-attachment: fixed;
         color: #FFFFFF;
     }
 
-    [data-testid="stHeader"] {
-        background: transparent !important;
-    }
+    [data-testid="stHeader"] { background: transparent !important; }
 
-    /* Container Max Width Optimization */
     .block-container {
         max-width: 1250px !important;
         padding-top: 1.5rem !important;
         padding-bottom: 6rem !important;
     }
 
-    /* Top Status Bar */
     .top-status-bar {
         display: flex;
         align-items: center;
@@ -115,7 +117,6 @@ st.markdown(
         100% { opacity: 1; transform: scale(1.2); }
     }
 
-    /* Hero Text Left Column */
     .hero-title {
         font-size: 3.2rem;
         font-weight: 800;
@@ -133,7 +134,6 @@ st.markdown(
         max-width: 480px;
     }
 
-    /* Wave Circle Animation Right Side */
     .wave-container {
         position: relative;
         width: 280px;
@@ -175,12 +175,8 @@ st.markdown(
         box-shadow: 0 0 40px rgba(6, 182, 212, 0.8), 0 0 80px rgba(217, 70, 239, 0.5);
     }
 
-    .mic-core-icon {
-        font-size: 2.8rem;
-        color: #06b6d4;
-    }
+    .mic-core-icon { font-size: 2.8rem; color: #06b6d4; }
 
-    /* Buttons Override (Pink Gradient Read More Style) */
     .stButton > button {
         border-radius: 30px !important;
         border: none !important;
@@ -198,7 +194,6 @@ st.markdown(
         color: #ffffff !important;
     }
 
-    /* Audio Mic Input Override */
     [data-testid="stAudioInput"] {
         background: transparent !important;
         border: none !important;
@@ -222,7 +217,6 @@ st.markdown(
         box-shadow: 0 0 12px rgba(6, 182, 212, 0.6) !important;
     }
 
-    /* Strict Dark Bottom Input Override */
     [data-testid="stChatInput"] {
         background-color: #120324 !important;
         background: #120324 !important;
@@ -259,7 +253,6 @@ st.markdown(
         border-radius: 50% !important;
     }
 
-    /* Chat Messages Glass Styling */
     .stChatMessage {
         background: rgba(255, 255, 255, 0.03) !important;
         border: 1px solid rgba(217, 70, 239, 0.15) !important;
@@ -277,7 +270,7 @@ st.markdown(
 )
 
 # --------------------------------------------------
-# SESSION STATE MANAGEMENT
+# SESSION STATE
 # --------------------------------------------------
 if "messages" not in st.session_state:
     st.session_state.messages = []
@@ -288,9 +281,16 @@ if "last_audio_hash" not in st.session_state:
 if "auto_speak_responses" not in st.session_state:
     st.session_state.auto_speak_responses = True
 
+if "pending_url" not in st.session_state:
+    st.session_state.pending_url = None
+
+# FIX for clear-chat double-click bug
+if "clear_chat_pending" not in st.session_state:
+    st.session_state.clear_chat_pending = False
+
 
 # --------------------------------------------------
-# CORE LOGIC FUNCTIONS
+# HELPERS
 # --------------------------------------------------
 def process_audio(audio_bytes: bytes) -> str:
     recognizer = sr.Recognizer()
@@ -300,7 +300,7 @@ def process_audio(audio_bytes: bytes) -> str:
 
 
 def browser_speak(text: str):
-    """Speak on the visitor's device/browser instead of the Streamlit server."""
+    """Speak on visitor's browser using Web Speech API."""
     if not text:
         return
     safe_text = (
@@ -332,6 +332,28 @@ def browser_speak(text: str):
     )
 
 
+def browser_stop_speaking():
+    """Cancel whatever the browser is currently speaking."""
+    components.html(
+        """
+        <script>
+        (function() {
+            try {
+                if ("speechSynthesis" in window) {
+                    window.speechSynthesis.cancel();
+                }
+            } catch (e) {}
+        })();
+        </script>
+        """,
+        height=0,
+        scrolling=False,
+    )
+
+
+# --------------------------------------------------
+# CORE ASSISTANT
+# --------------------------------------------------
 def run_assistant(query: str):
     query = query.strip()
     if not query:
@@ -344,9 +366,6 @@ def run_assistant(query: str):
     except Exception as err:
         response = f"Error processing query: {err}"
 
-    # Browser commands are returned as OPEN_URL:<url>.
-    # The URL is handled client-side, because webbrowser.open() on the
-    # Streamlit server cannot open a tab on the visitor's device.
     if isinstance(response, str) and response.startswith("OPEN_URL:"):
         lines = response.splitlines()
         url = lines[0].replace("OPEN_URL:", "", 1).strip()
@@ -355,25 +374,21 @@ def run_assistant(query: str):
         st.session_state.pending_url = url
     else:
         st.session_state.messages.append({"role": "assistant", "content": response})
-        if st.session_state.auto_speak_responses:
+
+        # Auto-speak ONLY if toggle is ON
+        if st.session_state.auto_speak_responses and response:
             browser_speak(response)
 
 
 # --------------------------------------------------
-# BROWSER ACTION HANDLER
+# HANDLE PENDING URL
 # --------------------------------------------------
-if "pending_url" not in st.session_state:
-    st.session_state.pending_url = None
-
 if st.session_state.pending_url:
     safe_url = (
         st.session_state.pending_url
         .replace("\\", "\\\\")
         .replace('"', '\\"')
     )
-
-    # Try to open automatically in the visitor's browser.
-    # If the browser blocks the popup, the visible link below remains usable.
     components.html(
         f"""
         <script>
@@ -386,7 +401,7 @@ if st.session_state.pending_url:
                     link.href = url;
                     link.target = "_blank";
                     link.rel = "noopener noreferrer";
-                    link.textContent = "Open YouTube";
+                    link.textContent = "Open link";
                     link.style.cssText =
                         "display:inline-block;padding:10px 16px;border-radius:22px;" +
                         "background:linear-gradient(135deg,#a855f7,#d946ef);" +
@@ -400,15 +415,28 @@ if st.session_state.pending_url:
         height=45,
         scrolling=False,
     )
-
     st.session_state.pending_url = None
 
 
 # --------------------------------------------------
-# APP LAYOUT (IMAGE-STYLED HERO SECTION)
+# HANDLE CLEAR CHAT (fixed — works on first click)
 # --------------------------------------------------
+if st.session_state.clear_chat_pending:
+    st.session_state.messages = []
+    st.session_state.last_audio_hash = None
+    st.session_state.pending_url = None
+    st.session_state.clear_chat_pending = False
+    browser_stop_speaking()
+    try:
+        reset_conversation()
+    except Exception:
+        pass
+    st.rerun()
 
-# Top Navigation Bar
+
+# --------------------------------------------------
+# TOP BAR
+# --------------------------------------------------
 st.markdown(
     """
     <div class="top-status-bar">
@@ -422,10 +450,11 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# Hero Split Layout (Left Text, Right Visualizer)
+# --------------------------------------------------
+# HERO LAYOUT
+# --------------------------------------------------
 col_left, col_right = st.columns([1.1, 1], gap="large")
 
-# LEFT SIDE: Image Banner Heading & Quick Action Buttons
 with col_left:
     st.markdown(
         """
@@ -436,10 +465,6 @@ with col_left:
         """,
         unsafe_allow_html=True,
     )
-
-    # --------------------------------------------------
-    # APEX AI COMMAND CENTER
-    # --------------------------------------------------
 
     st.markdown(
         """
@@ -527,7 +552,7 @@ with col_left:
     for col, (icon, title, subtitle, query) in zip(command_cols, commands):
         with col:
             if st.button(
-                f"{icon}  {title}\n{subtitle}",
+                f"{icon}  {title}",
                 key=f"command_{title.lower().replace(' ', '_')}",
                 use_container_width=True,
             ):
@@ -535,7 +560,6 @@ with col_left:
                 st.rerun()
 
     st.write("")
-    # Clickable Mic Input
     recorded_audio = st.audio_input("Record audio", label_visibility="collapsed")
 
     if recorded_audio is not None:
@@ -553,24 +577,31 @@ with col_left:
                 except Exception:
                     st.warning("Could not understand audio.")
 
-    c1, c2 = st.columns([1.2, 1])
+    # --------- CONTROL ROW ---------
+    c1, c2, c3 = st.columns([1.2, 1, 1])
+
     with c1:
         st.session_state.auto_speak_responses = st.toggle(
-            "🔊 Auto Read Aloud", value=st.session_state.auto_speak_responses
+            "🔊 Auto Read Aloud",
+            value=st.session_state.auto_speak_responses
         )
+
     with c2:
+        if st.button("🔇 Stop Speaking", use_container_width=True):
+            browser_stop_speaking()
+            st.toast("Stopped speaking.")
+
+    with c3:
         if st.button("🗑️ Clear Chat", use_container_width=True):
-            st.session_state.messages = []
-            st.session_state.last_audio_hash = None
-            try:
-                reset_conversation()
-            except Exception:
-                pass
+            # Flag-based clear => works on first click
+            st.session_state.clear_chat_pending = True
             st.rerun()
 
-# RIGHT SIDE: Image Wave Ring Visualizer & Chat Window
+
+# --------------------------------------------------
+# RIGHT SIDE
+# --------------------------------------------------
 with col_right:
-    # Wave Mic Circle Animation (Matching the reference image)
     st.markdown(
         """
         <div class="wave-container">
@@ -601,7 +632,10 @@ with col_right:
                     if st.button("🔊 Read", key=f"speak_{idx}"):
                         browser_speak(msg["content"])
 
-# Fixed Dark Bottom Chat Input
+
+# --------------------------------------------------
+# BOTTOM CHAT INPUT
+# --------------------------------------------------
 prompt = st.chat_input("Type a message or command...")
 if prompt:
     run_assistant(prompt)
