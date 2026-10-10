@@ -288,6 +288,10 @@ if "pending_url" not in st.session_state:
 if "clear_chat_pending" not in st.session_state:
     st.session_state.clear_chat_pending = False
 
+# NEW: browser autoplay unlock flag
+if "voice_unlocked" not in st.session_state:
+    st.session_state.voice_unlocked = False
+
 
 # --------------------------------------------------
 # HELPERS
@@ -375,8 +379,12 @@ def run_assistant(query: str):
     else:
         st.session_state.messages.append({"role": "assistant", "content": response})
 
-        # Auto-speak ONLY if toggle is ON
-        if st.session_state.auto_speak_responses and response:
+        # Auto-speak ONLY if voice is unlocked AND toggle is ON
+        if (
+            st.session_state.voice_unlocked
+            and st.session_state.auto_speak_responses
+            and response
+        ):
             browser_speak(response)
 
 
@@ -560,6 +568,36 @@ with col_left:
                 st.rerun()
 
     st.write("")
+
+    # --------- VOICE ACTIVATION (one-time unlock for browser autoplay) ---------
+    if not st.session_state.voice_unlocked:
+        unlock_col1, unlock_col2 = st.columns([2, 1])
+        with unlock_col1:
+            st.info("🎙️ **First time here?** Click **Enable Voice** once so the assistant can speak automatically.")
+        with unlock_col2:
+            if st.button("🔊 Enable Voice", use_container_width=True, key="unlock_voice_btn"):
+                st.session_state.voice_unlocked = True
+                # Silent activation utterance unlocks speechSynthesis for this session
+                components.html(
+                    """
+                    <script>
+                    (function() {
+                        try {
+                            if ("speechSynthesis" in window) {
+                                const u = new SpeechSynthesisUtterance("Voice enabled");
+                                u.volume = 0.01;
+                                window.speechSynthesis.speak(u);
+                            }
+                        } catch (e) {}
+                    })();
+                    </script>
+                    """,
+                    height=0,
+                )
+                st.rerun()
+    else:
+        st.success("✅ Voice is enabled — assistant will speak automatically.")
+
     recorded_audio = st.audio_input("Record audio", label_visibility="collapsed")
 
     if recorded_audio is not None:
