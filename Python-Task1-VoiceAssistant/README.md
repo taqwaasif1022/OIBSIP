@@ -1,4 +1,4 @@
-# voicely AI — Advanced Voice Assistant
+# Voicely AI — Advanced Voice Assistant
 
 A Python-based AI voice assistant developed for the **Oasis Infobyte Python Programming Internship — Task 1**.
 
