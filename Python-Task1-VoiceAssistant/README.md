@@ -1,4 +1,4 @@
-# Apex AI — Advanced Voice Assistant
+# voicely AI — Advanced Voice Assistant
 
 A Python-based AI voice assistant developed for the **Oasis Infobyte Python Programming Internship — Task 1**.
 
@@ -47,7 +47,7 @@ pip install -r requirements.txt
 python voice_assistant.py
 Privacy
 
-Apex AI processes voice input through speech-recognition services and may use external AI/search/weather services when their features are requested.
+voicely AI processes voice input through speech-recognition services and may use external AI/search/weather services when their features are requested.
 
 API keys and email credentials are stored locally in .env.
 .env is excluded from Git using .gitignore.
