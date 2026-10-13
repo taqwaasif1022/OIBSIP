@@ -1,5 +1,5 @@
 # ============================================================
-# APEX AI — Advanced Voice Assistant
+# VOICELY AI — Advanced Voice Assistant
 # Oasis Infobyte Python Programming Internship — Task 1
 # ============================================================
 
@@ -89,7 +89,7 @@ def speak(text: str):
 
     text = str(text).strip()
 
-    print(f"\n🤖 Apex: {text}")
+    print(f"\n🤖 voicely: {text}")
 
     with speech_lock:
         engine = None
@@ -177,15 +177,15 @@ def listen():
 DEFAULT_CUSTOM_COMMANDS = {
     "say hello": {
         "type": "say",
-        "value": "Hello! Welcome to Apex AI."
+        "value": "Hello! Welcome to Voicely AI."
     },
     "introduce yourself": {
         "type": "say",
-        "value": "I am Apex, an AI-powered voice assistant."
+        "value": "I am Voicely, an AI-powered voice assistant."
     },
-    "open apex website": {
+    "open voicely website": {
         "type": "url",
-        "value": "https://taqwaasif1022.github.io/apex-ai-agent/"
+        "value": "https://taqwaasif1022.github.io/voicely-ai-agent/"
     }
 }
 
@@ -372,8 +372,8 @@ def add_custom_command(
 # ============================================================
 
 DEFAULT_KNOWLEDGE_BASE = {
-    "apex ai": (
-        "Apex AI is an AI-powered voice assistant "
+    "voicely ai": (
+        "Voicely AI is an AI-powered voice assistant "
         "developed as part of the Oasis Infobyte "
         "Python Programming Internship."
     ),
@@ -468,32 +468,83 @@ def local_knowledge(question: str) -> str:
     )
 
 
+
 # ============================================================
-# TIME
+# TIME — LOCATION-AWARE
 # ============================================================
+
+from zoneinfo import ZoneInfo
+
+TIME_ZONES = {
+    "pakistan": "Asia/Karachi",
+    "pak": "Asia/Karachi",
+    "karachi": "Asia/Karachi",
+    "islamabad": "Asia/Karachi",
+    "lahore": "Asia/Karachi",
+    "peshawar": "Asia/Karachi",
+    "wah cantt": "Asia/Karachi",
+    "swabi": "Asia/Karachi",
+    "india": "Asia/Kolkata",
+    "new delhi": "Asia/Kolkata",
+    "london": "Europe/London",
+    "uk": "Europe/London",
+    "united kingdom": "Europe/London",
+    "dubai": "Asia/Dubai",
+    "uae": "Asia/Dubai",
+    "saudi arabia": "Asia/Riyadh",
+    "riyadh": "Asia/Riyadh",
+    "new york": "America/New_York",
+    "los angeles": "America/Los_Angeles",
+    "toronto": "America/Toronto",
+    "tokyo": "Asia/Tokyo",
+    "sydney": "Australia/Sydney",
+    "utc": "UTC",
+}
+
+
+def resolve_timezone(location: str = "Pakistan"):
+    """Resolve a supported city or country to its time zone."""
+    location = (location or "Pakistan").strip().lower()
+
+    zone_name = TIME_ZONES.get(location)
+
+    if not zone_name:
+        return None
+
+    return ZoneInfo(zone_name)
+
 
 @tool
-def get_current_time() -> str:
-    """
-    Get the current system time.
+def get_current_time(location: str = "Pakistan") -> str:
+    """Get the accurate current time in a specified city or country."""
+    timezone = resolve_timezone(location)
 
-    IMPORTANT:
-    The existing system/laptop timezone is intentionally used.
-    """
+    if timezone is None:
+        return (
+            f"I don't have a configured time zone for {location}. "
+            "Please specify a supported city or country."
+        )
 
-    return datetime.now().strftime("%I:%M %p")
+    now = datetime.now(timezone)
 
-
-@tool
-def get_current_date() -> str:
-    """
-    Get the current system date.
-    """
-
-    return datetime.now().strftime(
-        "%A, %B %d, %Y"
+    return (
+        f"The current time in {location.title()} is "
+        f"{now.strftime('%I:%M:%S %p')} "
+        f"on {now.strftime('%A, %B %d, %Y')}."
     )
 
+
+@tool
+def get_current_date(location: str = "Pakistan") -> str:
+    """Get the current date in a specified city or country."""
+    timezone = resolve_timezone(location)
+
+    if timezone is None:
+        return f"I don't have a configured time zone for {location}."
+
+    now = datetime.now(timezone)
+
+    return now.strftime("%A, %B %d, %Y")
 
 # ============================================================
 # CALCULATOR
@@ -999,7 +1050,7 @@ def send_email(
 
     if not subject:
 
-        subject = "Message from Apex AI"
+        subject = "Message from Voicely AI"
 
     if not body:
 
@@ -1061,24 +1112,28 @@ reminder_lock = threading.Lock()
 
 
 def reminder_alert(message: str):
-    """
-    Called when a reminder timer finishes.
-    """
+    """Announce a due reminder while VOICELY is running."""
+    try:
+        print(f"\n\n⏰ REMINDER: {message}", flush=True)
 
-    print(
-        f"\n\n⏰ REMINDER: {message}"
-    )
+        # Audible notification on Windows.
+        try:
+            import winsound
+            winsound.MessageBeep(winsound.MB_ICONEXCLAMATION)
+        except Exception:
+            pass
 
-    # Speech happens after timer finishes.
-    speak(
-        f"Reminder: {message}"
-    )
+        speak(f"Reminder: {message}")
 
-    with reminder_lock:
+    except Exception as exc:
+        print(f"Reminder notification error: {exc}", flush=True)
 
-        if message in active_reminders:
+    finally:
+        with reminder_lock:
+            if message in active_reminders:
+                active_reminders.remove(message)
 
-            active_reminders.remove(message)
+
 
 
 def create_reminder(seconds: float, message: str):
@@ -1235,62 +1290,76 @@ def handle_direct_command(command: str):
             }
         )
 
+   
+    
     # --------------------------------------------------------
-    # SIMPLE REMINDER
+    # REMINDERS — DIRECT COMMANDS
     # --------------------------------------------------------
 
-    reminder_match = re.match(
-        r"^remind me in "
-        r"(\d+(?:\.\d+)?)\s*"
-        r"(second|seconds|minute|minutes|hour|hours)"
-        r"\s+(?:to\s+)?(.+)$",
-        text
+    reminder_match = re.search(
+        r"\b(?:remind me|set a reminder)"
+        r"\s+(?:to\s+)?(.+?)"
+        r"\s+(?:in|after)\s+"
+        r"(\d+(?:\.\d+)?)\s*(seconds?|minutes?|hours?)\b",
+        text,
+        re.IGNORECASE
     )
 
     if reminder_match:
+        message = reminder_match.group(1).strip()
+        amount = float(reminder_match.group(2))
+        unit = reminder_match.group(3).lower()
 
-        amount = float(
-            reminder_match.group(1)
+    else:
+        reminder_match = re.search(
+            r"\b(?:remind me|set a reminder)"
+            r"\s+(?:in|after)\s+"
+            r"(\d+(?:\.\d+)?)\s*(seconds?|minutes?|hours?)"
+            r"\s+(?:to\s+)?(.+)$",
+            text,
+            re.IGNORECASE
         )
 
-        unit = reminder_match.group(2)
+        if reminder_match:
+            amount = float(reminder_match.group(1))
+            unit = reminder_match.group(2).lower()
+            message = reminder_match.group(3).strip()
+        else:
+            amount = 0
+            unit = ""
+            message = ""
 
-        message = reminder_match.group(3).strip()
+    if reminder_match:
+        if amount <= 0:
+            return "Please specify a time greater than zero."
 
-        if "second" in unit:
+        if not message:
+            return "What should I remind you about?"
 
+        if unit.startswith("second"):
             seconds = amount
-
-        elif "minute" in unit:
-
+            time_text = f"{amount:g} seconds"
+        elif unit.startswith("minute"):
             seconds = amount * 60
-
+            time_text = f"{amount:g} minutes"
         else:
-
             seconds = amount * 3600
+            time_text = f"{amount:g} hours"
 
-        create_reminder(
-            seconds,
-            message
-        )
-
-        if "hour" in unit:
-
-            time_text = f"{amount:g} hour(s)"
-
-        elif "minute" in unit:
-
-            time_text = f"{amount:g} minute(s)"
-
-        else:
-
-            time_text = f"{amount:g} second(s)"
+        create_reminder(seconds, message)
 
         return (
-            f"Reminder set for {time_text}: "
-            f"{message}"
+            f"Reminder set! I'll remind you to {message} "
+            f"in {time_text}, while VOICELY is running."
         )
 
+    if "remind me" in text or "set a reminder" in text:
+        return (
+            "When should I remind you, and about what? "
+            "Say: Remind me in 5 minutes to study."
+        )
+
+  
     # --------------------------------------------------------
     # COMMON WEBSITE COMMANDS
     # --------------------------------------------------------
@@ -1363,7 +1432,7 @@ tools = [
 # ============================================================
 
 SYSTEM_PROMPT = """
-You are Apex, a helpful intelligent voice assistant.
+You are Voicely, a helpful intelligent voice assistant.
 
 Your job is to answer naturally and perform actions using tools.
 
@@ -1413,7 +1482,7 @@ IMPORTANT TOOL RULES:
 
 19. Do not invent tool results.
 
-You are Apex AI.
+You are voicely AI.
 """
 
 
@@ -1496,57 +1565,113 @@ def extract_text(value):
 import re
 import webbrowser
 
+
 # ============================================================
 # GEMINI MODEL FALLBACK PIPELINE SETUP
 # ============================================================
 
-# Multi-tier fallback sequence
-GEMINI_MODELS = [
+def create_agent_for_model(model_name: str):
+    """Create a LangChain agent using a specified Gemini model."""
+
+    if not GEMINI_API_KEY:
+        raise RuntimeError(
+            "GEMINI_API_KEY is missing. Check your .env file."
+        )
+
+    model = ChatGoogleGenerativeAI(
+        model=model_name,
+        google_api_key=GEMINI_API_KEY,
+        max_retries=0,
+    )
+
+    return create_agent(
+        model=model,
+        tools=tools,
+        system_prompt=SYSTEM_PROMPT,
+    )
+
+
+# Try the configured model first, followed by alternatives.
+GEMINI_MODELS = list(dict.fromkeys([
+    MODEL_NAME,
     "gemini-3.8-flash",
     "gemini-3.7-flash",
+    "gemini-3.6-flash",
     "gemini-3.5-flash",
     "gemini-3.5-flash-lite",
     "gemini-3.1-flash-lite",
-    "gemini-2.5-flash",
-    "gemini-2.5-flash-lite",
-    "gemini-2.0-flash",
-    "gemini-1.5-flash"
-]
+]))
+
 
 def invoke_gemini_fallback(user_text: str) -> str:
-    """
-    Tries each model in the GEMINI_MODELS list sequentially.
-    Returns the response text if successful, or raises Exception if all fail.
-    """
+    """Invoke a real Gemini-backed agent."""
+
     last_exception = None
 
     for model_name in GEMINI_MODELS:
         try:
-            print(f"Attempting query with model: {model_name}...", flush=True)
-            
-            # Assuming create_agent_for_model dynamically returns an agent bound to model_name
-            # Adjust the invocation method below according to your agent setup (e.g., ChatGoogleGenerativeAI)
-            temp_agent = create_agent_for_model(model_name)
-            
-            result = temp_agent.invoke(
-                {"messages": [{"role": "user", "content": user_text}]}
+            print(
+                f"Trying Gemini model: {model_name}",
+                flush=True,
             )
 
+            temp_agent = create_agent_for_model(model_name)
+
+            result = temp_agent.invoke({
+                "messages": [
+                    {"role": "user", "content": user_text}
+                ]
+            })
+
             messages = result.get("messages", [])
-            if messages:
-                for message in reversed(messages):
-                    content = getattr(message, "content", None)
-                    text = extract_text(content)
-                    if text:
-                        return text
-                        
+
+            for message in reversed(messages):
+                content = getattr(message, "content", None)
+
+                if getattr(message, "type", "") == "tool":
+                    continue
+
+                answer = extract_text(content)
+
+                if answer:
+                    print(
+                        f"Gemini response received from "
+                        f"{model_name}",
+                        flush=True,
+                    )
+                    return answer
+
+            raise RuntimeError(
+                f"{model_name} returned no text response."
+            )
+
         except Exception as exc:
-            print(f"Model {model_name} failed: {type(exc).__name__}: {exc}", flush=True)
             last_exception = exc
-            continue
+            error_text = str(exc)
+            print(
+                f"Gemini error ({model_name}): "
+                f"{type(exc).__name__}: {error_text}",
+                flush=True,
+            )
 
-    raise Exception(f"All Gemini models exhausted. Last error: {last_exception}")
+            # Do not keep retrying different models if the
+            # API key or shared quota is the actual problem.
+            error_lower = error_text.lower()
 
+            if any(term in error_lower for term in (
+                "resource_exhausted",
+                "quota exceeded",
+                "rate limit",
+                "permission_denied",
+                "api key not valid",
+                "unauthenticated",
+            )):
+                break
+
+    raise RuntimeError(
+        f"Gemini could not generate a response. "
+        f"Last error: {last_exception}"
+    )
 
 # ============================================================
 # TOOL FALLBACK FUNCTION
@@ -1728,7 +1853,7 @@ def ask_voicely(user_text: str) -> str:
 
 
 # Backward compatibility alias
-ask_apex = ask_voicely
+ask_voicely = ask_voicely
 
 
 # ============================================================
