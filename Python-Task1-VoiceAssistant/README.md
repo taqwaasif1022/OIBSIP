@@ -295,7 +295,8 @@ This project is an educational voice assistant created for the **Oasis Infobyte 
 - Weather, news, and AI responses are provided by third-party APIs and may occasionally be inaccurate.
 - PC control features are **Windows-only** and require user confirmation.
 - This is not a production-grade security product.
-
+- Some features may not run in the browser but it will run in your local PC.
+  
 ---
 
 ## 📄 License
