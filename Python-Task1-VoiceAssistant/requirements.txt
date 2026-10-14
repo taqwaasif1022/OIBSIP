@@ -1,8 +1,11 @@
+streamlit
 SpeechRecognition
 pyttsx3
 python-dotenv
 tavily-python
 ddgs
 langchain
-langchain-google-genai
+langchain-core
+langchain-openai
+openai
 requests
