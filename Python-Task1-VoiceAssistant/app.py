@@ -10,13 +10,12 @@ import streamlit.components.v1 as components
 # ============================================================
 
 try:
-    if "GEMINI_API_KEY" in st.secrets:
-        os.environ["GEMINI_API_KEY"] = st.secrets["GEMINI_API_KEY"]
+    if "GROQ_API_KEY" in st.secrets:
+        os.environ["GROQ_API_KEY"] = st.secrets["GROQ_API_KEY"]
 
     if "TAVILY_API_KEY" in st.secrets:
         os.environ["TAVILY_API_KEY"] = st.secrets["TAVILY_API_KEY"]
 
-    # NOTE: keep BOTH naming conventions so voice_assistant.py finds them
     if "GMAIL_ADDRESS" in st.secrets:
         os.environ["GMAIL_EMAIL"] = st.secrets["GMAIL_ADDRESS"]
 
@@ -284,11 +283,9 @@ if "auto_speak_responses" not in st.session_state:
 if "pending_url" not in st.session_state:
     st.session_state.pending_url = None
 
-# FIX for clear-chat double-click bug
 if "clear_chat_pending" not in st.session_state:
     st.session_state.clear_chat_pending = False
 
-# NEW: browser autoplay unlock flag
 if "voice_unlocked" not in st.session_state:
     st.session_state.voice_unlocked = False
 
@@ -304,7 +301,6 @@ def process_audio(audio_bytes: bytes) -> str:
 
 
 def browser_speak(text: str):
-    """Speak on visitor's browser using Web Speech API."""
     if not text:
         return
     safe_text = (
@@ -337,7 +333,6 @@ def browser_speak(text: str):
 
 
 def browser_stop_speaking():
-    """Cancel whatever the browser is currently speaking."""
     components.html(
         """
         <script>
@@ -378,8 +373,6 @@ def run_assistant(query: str):
         st.session_state.pending_url = url
     else:
         st.session_state.messages.append({"role": "assistant", "content": response})
-
-        # Auto-speak ONLY if voice is unlocked AND toggle is ON
         if (
             st.session_state.voice_unlocked
             and st.session_state.auto_speak_responses
@@ -427,7 +420,7 @@ if st.session_state.pending_url:
 
 
 # --------------------------------------------------
-# HANDLE CLEAR CHAT (fixed — works on first click)
+# HANDLE CLEAR CHAT
 # --------------------------------------------------
 if st.session_state.clear_chat_pending:
     st.session_state.messages = []
@@ -530,16 +523,16 @@ with col_left:
         </style>
 
         <div class="command-center">
-            <div class="command-kicker">APEX AI &bull; COMMAND CENTER</div>
+            <div class="command-kicker">VOICELY AI &bull; COMMAND CENTER</div>
             <div class="command-heading">
                 <div>
                     <div class="command-title">What do you want to build?</div>
-                    <div class="command-subtitle">Pick a mode or talk to Apex with your voice.</div>
+                    <div class="command-subtitle">Pick a mode or talk to Voicely with your voice.</div>
                 </div>
                 <div class="command-orb">&#10022;</div>
             </div>
         </div>
-        <div class="command-label">EXPLORE APEX MODES</div>
+        <div class="command-label">EXPLORE VOICELY MODES</div>
         """,
         unsafe_allow_html=True,
     )
@@ -569,7 +562,6 @@ with col_left:
 
     st.write("")
 
-    # --------- VOICE ACTIVATION (one-time unlock for browser autoplay) ---------
     if not st.session_state.voice_unlocked:
         unlock_col1, unlock_col2 = st.columns([2, 1])
         with unlock_col1:
@@ -577,7 +569,6 @@ with col_left:
         with unlock_col2:
             if st.button("🔊 Enable Voice", use_container_width=True, key="unlock_voice_btn"):
                 st.session_state.voice_unlocked = True
-                # Silent activation utterance unlocks speechSynthesis for this session
                 components.html(
                     """
                     <script>
@@ -615,7 +606,6 @@ with col_left:
                 except Exception:
                     st.warning("Could not understand audio.")
 
-    # --------- CONTROL ROW ---------
     c1, c2, c3 = st.columns([1.2, 1, 1])
 
     with c1:
@@ -631,7 +621,6 @@ with col_left:
 
     with c3:
         if st.button("🗑️ Clear Chat", use_container_width=True):
-            # Flag-based clear => works on first click
             st.session_state.clear_chat_pending = True
             st.rerun()
 
