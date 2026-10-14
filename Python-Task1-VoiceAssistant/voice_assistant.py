@@ -1600,6 +1600,9 @@ GEMINI_MODELS = list(dict.fromkeys([
     "gemini-3.5-flash",
     "gemini-3.5-flash-lite",
     "gemini-3.1-flash-lite",
+    "gemini-2.5-flash",
+    "gemini-2.0-flash",
+    "gemini-2.5-flash-lite",
 ]))
 
 
@@ -1853,7 +1856,7 @@ def ask_voicely(user_text: str) -> str:
 
 
 # Backward compatibility alias
-ask_voicely = ask_voicely
+ask_apex = ask_voicely
 
 
 # ============================================================
