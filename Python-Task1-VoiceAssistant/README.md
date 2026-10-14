@@ -249,23 +249,6 @@ requests
 
 ---
 
-## 📸 Screenshots
-
-> Add application screenshots here to demonstrate the interface.
-
-**Main Interface**
-*Add screenshot here.*
-
-**Voice Conversation**
-*Add screenshot here.*
-
-**Command Center**
-*Add screenshot here.*
-
-**Web Demo**
-*Add screenshot here.*
-
----
 
 ## 🔐 Privacy
 
