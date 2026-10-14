@@ -1,5 +1,5 @@
 # ============================================================
-# VOICELY AI — Advanced Voice Assistant
+# VOICELY AI — Advanced Voice Assistant (Groq Edition)
 # Oasis Infobyte Python Programming Internship — Task 1
 # ============================================================
 
@@ -23,7 +23,7 @@ from ddgs import DDGS
 
 from langchain.agents import create_agent
 from langchain.tools import tool
-from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_openai import ChatOpenAI
 
 
 # ============================================================
@@ -35,27 +35,26 @@ load_dotenv()
 BASE_DIR = Path(__file__).resolve().parent
 
 TAVILY_API_KEY = os.getenv("TAVILY_API_KEY", "").strip()
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
+GROQ_API_KEY = os.getenv("GROQ_API_KEY", "").strip()
 
-# Keep existing email configuration compatible
 GMAIL_EMAIL = os.getenv("GMAIL_EMAIL", "").strip()
 GMAIL_PASSWORD = os.getenv("GMAIL_PASSWORD", "").strip()
 
-# Also support alternative names if present
 EMAIL_ADDRESS = os.getenv("EMAIL_ADDRESS", "").strip() or GMAIL_EMAIL
 EMAIL_APP_PASSWORD = (
     os.getenv("EMAIL_APP_PASSWORD", "").strip()
     or GMAIL_PASSWORD
 )
 
-MODEL_NAME = os.getenv("GEMINI_MODEL", "gemini-3.6-flash").strip()
+GROQ_BASE_URL = "https://api.groq.com/openai/v1"
+MODEL_NAME = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b").strip()
 
 
 if not TAVILY_API_KEY:
     print("⚠️ Warning: TAVILY_API_KEY is not configured.")
 
-if not GEMINI_API_KEY:
-    print("⚠️ Warning: GEMINI_API_KEY is not configured.")
+if not GROQ_API_KEY:
+    print("⚠️ Warning: GROQ_API_KEY is not configured.")
 
 
 # ============================================================
@@ -71,41 +70,27 @@ KNOWLEDGE_BASE_FILE = BASE_DIR / "knowledge_base.json"
 # ============================================================
 
 recognizer = sr.Recognizer()
-
-# Prevent multiple TTS engines from speaking at the same time.
 speech_lock = threading.Lock()
 
 
 def speak(text: str):
-    """
-    Speak text using pyttsx3.
-
-    A new engine is created for each speech request.
-    This avoids the 'run loop already started' problem
-    when reminders speak from a background thread.
-    """
+    """Speak text using pyttsx3."""
     if not text:
         return
 
     text = str(text).strip()
-
-    print(f"\n🤖 voicely: {text}")
+    print(f"\n🤖 Voicely: {text}")
 
     with speech_lock:
         engine = None
-
         try:
             engine = pyttsx3.init()
-
             engine.setProperty("rate", 175)
             engine.setProperty("volume", 1.0)
-
             engine.say(text)
             engine.runAndWait()
-
         except Exception as exc:
             print(f"TTS Error: {exc}")
-
         finally:
             try:
                 if engine is not None:
@@ -115,58 +100,31 @@ def speak(text: str):
 
 
 def listen():
-    """
-    Listen for a voice command using the microphone.
-    """
-
+    """Listen for a voice command using the microphone."""
     with sr.Microphone() as source:
-
         print("\n🎙️ Listening...")
-
         try:
-            recognizer.adjust_for_ambient_noise(
-                source,
-                duration=0.4
-            )
-
-            audio = recognizer.listen(
-                source,
-                timeout=6,
-                phrase_time_limit=15
-            )
-
+            recognizer.adjust_for_ambient_noise(source, duration=0.4)
+            audio = recognizer.listen(source, timeout=6, phrase_time_limit=15)
         except sr.WaitTimeoutError:
             print("⏱️ Listening timed out.")
             return ""
-
         except Exception as exc:
             print(f"Microphone Error: {exc}")
             return ""
 
     try:
-
         text = recognizer.recognize_google(audio)
-
         print(f"👤 You: {text}")
-
         return text.strip()
-
     except sr.UnknownValueError:
-
         print("❓ Sorry, I couldn't understand you.")
-
         return ""
-
     except sr.RequestError as exc:
-
         print(f"Speech Recognition Error: {exc}")
-
         return ""
-
     except Exception as exc:
-
         print(f"Speech Error: {exc}")
-
         return ""
 
 
@@ -191,179 +149,86 @@ DEFAULT_CUSTOM_COMMANDS = {
 
 
 def load_custom_commands():
-    """
-    Load custom commands from custom_commands.json.
-    """
-
     if not CUSTOM_COMMANDS_FILE.exists():
-
         try:
-            with open(
-                CUSTOM_COMMANDS_FILE,
-                "w",
-                encoding="utf-8"
-            ) as file:
-
-                json.dump(
-                    DEFAULT_CUSTOM_COMMANDS,
-                    file,
-                    indent=4
-                )
-
+            with open(CUSTOM_COMMANDS_FILE, "w", encoding="utf-8") as file:
+                json.dump(DEFAULT_CUSTOM_COMMANDS, file, indent=4)
         except Exception as exc:
             print(f"Custom command file error: {exc}")
-
         return DEFAULT_CUSTOM_COMMANDS.copy()
 
     try:
-
-        with open(
-            CUSTOM_COMMANDS_FILE,
-            "r",
-            encoding="utf-8"
-        ) as file:
-
+        with open(CUSTOM_COMMANDS_FILE, "r", encoding="utf-8") as file:
             data = json.load(file)
-
         if isinstance(data, dict):
             return data
-
     except Exception as exc:
-
         print(f"Custom command load error: {exc}")
 
     return DEFAULT_CUSTOM_COMMANDS.copy()
 
 
 def save_custom_commands(commands):
-    """
-    Save custom commands safely.
-    """
-
     try:
-
-        with open(
-            CUSTOM_COMMANDS_FILE,
-            "w",
-            encoding="utf-8"
-        ) as file:
-
-            json.dump(
-                commands,
-                file,
-                indent=4
-            )
-
+        with open(CUSTOM_COMMANDS_FILE, "w", encoding="utf-8") as file:
+            json.dump(commands, file, indent=4)
         return True
-
     except Exception as exc:
-
         print(f"Custom command save error: {exc}")
-
         return False
 
 
 @tool
 def run_custom_command(command: str) -> str:
-    """
-    Run a user-defined command from custom_commands.json.
-    """
-
+    """Run a user-defined command from custom_commands.json."""
     commands = load_custom_commands()
-
     requested = command.lower().strip()
 
-    # Exact match first
     if requested in commands:
-
         item = commands[requested]
-
-        action_type = str(
-            item.get("type", "say")
-        ).lower()
-
-        value = str(
-            item.get("value", "")
-        ).strip()
+        action_type = str(item.get("type", "say")).lower()
+        value = str(item.get("value", "")).strip()
 
         if action_type == "url":
-
             if value.startswith(("http://", "https://")):
                 return f"OPEN_URL:{value}"
-
             return "The custom URL is invalid."
-
         return value
 
-    # Partial match
     for name, item in commands.items():
-
         if name.lower() in requested:
-
-            action_type = str(
-                item.get("type", "say")
-            ).lower()
-
-            value = str(
-                item.get("value", "")
-            ).strip()
+            action_type = str(item.get("type", "say")).lower()
+            value = str(item.get("value", "")).strip()
 
             if action_type == "url":
-
                 if value.startswith(("http://", "https://")):
                     return f"OPEN_URL:{value}"
-
                 return "The custom URL is invalid."
-
             return value
 
-    return (
-        f"I couldn't find a custom command named "
-        f"'{command}'."
-    )
+    return f"I couldn't find a custom command named '{command}'."
 
 
 @tool
-def add_custom_command(
-    name: str,
-    action_type: str,
-    value: str
-) -> str:
-    """
-    Add a custom voice command.
-
-    action_type can be:
-    - say
-    - url
-    """
-
+def add_custom_command(name: str, action_type: str, value: str) -> str:
+    """Add a custom voice command (type: say or url)."""
     name = name.strip().lower()
     action_type = action_type.strip().lower()
     value = value.strip()
 
     if not name:
         return "The command name cannot be empty."
-
     if action_type not in {"say", "url"}:
         return "Action type must be either say or url."
-
     if action_type == "url":
         if not value.startswith(("http://", "https://")):
             return "The URL must start with http:// or https://."
 
     commands = load_custom_commands()
-
-    commands[name] = {
-        "type": action_type,
-        "value": value
-    }
+    commands[name] = {"type": action_type, "value": value}
 
     if save_custom_commands(commands):
-
-        return (
-            f"Custom command '{name}' has been saved."
-        )
-
+        return f"Custom command '{name}' has been saved."
     return "I couldn't save the custom command."
 
 
@@ -377,70 +242,43 @@ DEFAULT_KNOWLEDGE_BASE = {
         "developed as part of the Oasis Infobyte "
         "Python Programming Internship."
     ),
-
     "python": (
         "Python is a high-level general-purpose "
         "programming language known for its readable syntax."
     ),
-
     "artificial intelligence": (
         "Artificial Intelligence is the field of building "
         "systems that can perform tasks that normally "
         "require human intelligence."
     ),
-
     "machine learning": (
         "Machine Learning is a branch of AI where systems "
         "learn patterns from data to make predictions "
         "or decisions."
     ),
-
     "generative ai": (
         "Generative AI refers to AI systems that can "
         "generate content such as text, images, audio "
         "or code."
-    )
+    ),
 }
 
 
 def load_knowledge_base():
-
     if not KNOWLEDGE_BASE_FILE.exists():
-
         try:
-
-            with open(
-                KNOWLEDGE_BASE_FILE,
-                "w",
-                encoding="utf-8"
-            ) as file:
-
-                json.dump(
-                    DEFAULT_KNOWLEDGE_BASE,
-                    file,
-                    indent=4
-                )
-
+            with open(KNOWLEDGE_BASE_FILE, "w", encoding="utf-8") as file:
+                json.dump(DEFAULT_KNOWLEDGE_BASE, file, indent=4)
         except Exception as exc:
             print(f"Knowledge base error: {exc}")
-
         return DEFAULT_KNOWLEDGE_BASE.copy()
 
     try:
-
-        with open(
-            KNOWLEDGE_BASE_FILE,
-            "r",
-            encoding="utf-8"
-        ) as file:
-
+        with open(KNOWLEDGE_BASE_FILE, "r", encoding="utf-8") as file:
             data = json.load(file)
-
         if isinstance(data, dict):
             return data
-
     except Exception as exc:
-
         print(f"Knowledge base load error: {exc}")
 
     return DEFAULT_KNOWLEDGE_BASE.copy()
@@ -448,103 +286,32 @@ def load_knowledge_base():
 
 @tool
 def local_knowledge(question: str) -> str:
-    """
-    Search the local knowledge base.
-    """
-
+    """Search the local knowledge base."""
     question_lower = question.lower()
-
     knowledge = load_knowledge_base()
 
     for key, answer in knowledge.items():
-
         if key.lower() in question_lower:
-
             return str(answer)
 
-    return (
-        "No matching information was found "
-        "in the local knowledge base."
-    )
-
+    return "No matching information was found in the local knowledge base."
 
 
 # ============================================================
-# TIME — LOCATION-AWARE
+# TIME & DATE
 # ============================================================
 
-from zoneinfo import ZoneInfo
-
-TIME_ZONES = {
-    "pakistan": "Asia/Karachi",
-    "pak": "Asia/Karachi",
-    "karachi": "Asia/Karachi",
-    "islamabad": "Asia/Karachi",
-    "lahore": "Asia/Karachi",
-    "peshawar": "Asia/Karachi",
-    "wah cantt": "Asia/Karachi",
-    "swabi": "Asia/Karachi",
-    "india": "Asia/Kolkata",
-    "new delhi": "Asia/Kolkata",
-    "london": "Europe/London",
-    "uk": "Europe/London",
-    "united kingdom": "Europe/London",
-    "dubai": "Asia/Dubai",
-    "uae": "Asia/Dubai",
-    "saudi arabia": "Asia/Riyadh",
-    "riyadh": "Asia/Riyadh",
-    "new york": "America/New_York",
-    "los angeles": "America/Los_Angeles",
-    "toronto": "America/Toronto",
-    "tokyo": "Asia/Tokyo",
-    "sydney": "Australia/Sydney",
-    "utc": "UTC",
-}
-
-
-def resolve_timezone(location: str = "Pakistan"):
-    """Resolve a supported city or country to its time zone."""
-    location = (location or "Pakistan").strip().lower()
-
-    zone_name = TIME_ZONES.get(location)
-
-    if not zone_name:
-        return None
-
-    return ZoneInfo(zone_name)
+@tool
+def get_current_time() -> str:
+    """Get the current system time."""
+    return datetime.now().strftime("%I:%M %p")
 
 
 @tool
-def get_current_time(location: str = "Pakistan") -> str:
-    """Get the accurate current time in a specified city or country."""
-    timezone = resolve_timezone(location)
+def get_current_date() -> str:
+    """Get the current system date."""
+    return datetime.now().strftime("%A, %B %d, %Y")
 
-    if timezone is None:
-        return (
-            f"I don't have a configured time zone for {location}. "
-            "Please specify a supported city or country."
-        )
-
-    now = datetime.now(timezone)
-
-    return (
-        f"The current time in {location.title()} is "
-        f"{now.strftime('%I:%M:%S %p')} "
-        f"on {now.strftime('%A, %B %d, %Y')}."
-    )
-
-
-@tool
-def get_current_date(location: str = "Pakistan") -> str:
-    """Get the current date in a specified city or country."""
-    timezone = resolve_timezone(location)
-
-    if timezone is None:
-        return f"I don't have a configured time zone for {location}."
-
-    now = datetime.now(timezone)
-
-    return now.strftime("%A, %B %d, %Y")
 
 # ============================================================
 # CALCULATOR
@@ -564,77 +331,37 @@ _ALLOWED_OPERATORS = {
 
 
 def safe_calculate_node(node):
-
     if isinstance(node, ast.Expression):
         return safe_calculate_node(node.body)
-
     if isinstance(node, ast.Constant):
-
-        if isinstance(
-            node.value,
-            (int, float)
-        ):
+        if isinstance(node.value, (int, float)):
             return node.value
-
         raise ValueError("Invalid number.")
-
     if isinstance(node, ast.UnaryOp):
-
-        operation = _ALLOWED_OPERATORS.get(
-            type(node.op)
-        )
-
+        operation = _ALLOWED_OPERATORS.get(type(node.op))
         if operation is None:
             raise ValueError("Invalid operator.")
-
-        return operation(
-            safe_calculate_node(node.operand)
-        )
-
+        return operation(safe_calculate_node(node.operand))
     if isinstance(node, ast.BinOp):
-
-        operation = _ALLOWED_OPERATORS.get(
-            type(node.op)
-        )
-
+        operation = _ALLOWED_OPERATORS.get(type(node.op))
         if operation is None:
             raise ValueError("Invalid operator.")
-
         left = safe_calculate_node(node.left)
         right = safe_calculate_node(node.right)
-
         return operation(left, right)
-
     raise ValueError("Unsupported expression.")
 
 
 @tool
 def calculate(expression: str) -> str:
-    """
-    Safely calculate a mathematical expression.
-    """
-
+    """Safely calculate a mathematical expression."""
     try:
-
-        expression = expression.replace(
-            "^",
-            "**"
-        )
-
-        tree = ast.parse(
-            expression,
-            mode="eval"
-        )
-
+        expression = expression.replace("^", "**")
+        tree = ast.parse(expression, mode="eval")
         result = safe_calculate_node(tree)
-
         return str(result)
-
     except Exception:
-
-        return (
-            "I couldn't calculate that expression."
-        )
+        return "I couldn't calculate that expression."
 
 
 # ============================================================
@@ -643,73 +370,30 @@ def calculate(expression: str) -> str:
 
 @tool
 def web_search(query: str) -> str:
-    """
-    Search the web using Tavily.
-    """
-
+    """Search the web using Tavily."""
     if not TAVILY_API_KEY:
-
-        return (
-            "Tavily API key is not configured."
-        )
+        return "Tavily API key is not configured."
 
     try:
-
-        print(
-            f"\n🌐 Tavily searching: {query}"
-        )
-
-        client = TavilyClient(
-            api_key=TAVILY_API_KEY
-        )
-
-        results = client.search(
-            query=query,
-            search_depth="advanced",
-            max_results=5
-        )
-
-        items = results.get(
-            "results",
-            []
-        )
+        print(f"\n🌐 Tavily searching: {query}")
+        client = TavilyClient(api_key=TAVILY_API_KEY)
+        results = client.search(query=query, search_depth="advanced", max_results=5)
+        items = results.get("results", [])
 
         if not items:
-
             return "No useful web results were found."
 
         formatted = []
-
         for item in items:
-
-            title = item.get(
-                "title",
-                "Untitled"
-            )
-
-            content = item.get(
-                "content",
-                ""
-            )
-
-            url = item.get(
-                "url",
-                ""
-            )
-
-            formatted.append(
-                f"{title}\n{content}\n{url}"
-            )
+            title = item.get("title", "Untitled")
+            content = item.get("content", "")
+            url = item.get("url", "")
+            formatted.append(f"{title}\n{content}\n{url}")
 
         return "\n\n".join(formatted)
-
     except Exception as exc:
-
         print(f"Tavily Error: {exc}")
-
-        return (
-            "Web search is temporarily unavailable."
-        )
+        return "Web search is temporarily unavailable."
 
 
 # ============================================================
@@ -718,61 +402,26 @@ def web_search(query: str) -> str:
 
 @tool
 def search_news(query: str) -> str:
-    """
-    Search recent news.
-    """
-
+    """Search recent news."""
     try:
-
-        print(
-            f"\n📰 Searching news: {query}"
-        )
-
+        print(f"\n📰 Searching news: {query}")
         with DDGS() as ddgs:
-
-            results = list(
-                ddgs.news(
-                    query,
-                    max_results=5
-                )
-            )
+            results = list(ddgs.news(query, max_results=5))
 
         if not results:
-
             return "No news results were found."
 
         output = []
-
         for item in results:
-
-            title = item.get(
-                "title",
-                "Untitled"
-            )
-
-            source = item.get(
-                "source",
-                ""
-            )
-
-            url = item.get(
-                "url",
-                ""
-            )
-
-            output.append(
-                f"{title} — {source}\n{url}"
-            )
+            title = item.get("title", "Untitled")
+            source = item.get("source", "")
+            url = item.get("url", "")
+            output.append(f"{title} — {source}\n{url}")
 
         return "\n\n".join(output)
-
     except Exception as exc:
-
         print(f"News Error: {exc}")
-
-        return (
-            "News search is temporarily unavailable."
-        )
+        return "News search is temporarily unavailable."
 
 
 # ============================================================
@@ -780,95 +429,46 @@ def search_news(query: str) -> str:
 # ============================================================
 
 WEATHER_CODES = {
-    0: "clear sky",
-    1: "mainly clear",
-    2: "partly cloudy",
-    3: "overcast",
-    45: "fog",
-    48: "depositing rime fog",
-    51: "light drizzle",
-    53: "moderate drizzle",
-    55: "dense drizzle",
-    56: "light freezing drizzle",
-    57: "dense freezing drizzle",
-    61: "slight rain",
-    63: "moderate rain",
-    65: "heavy rain",
-    66: "light freezing rain",
-    67: "heavy freezing rain",
-    71: "slight snow",
-    73: "moderate snow",
-    75: "heavy snow",
+    0: "clear sky", 1: "mainly clear", 2: "partly cloudy", 3: "overcast",
+    45: "fog", 48: "depositing rime fog",
+    51: "light drizzle", 53: "moderate drizzle", 55: "dense drizzle",
+    56: "light freezing drizzle", 57: "dense freezing drizzle",
+    61: "slight rain", 63: "moderate rain", 65: "heavy rain",
+    66: "light freezing rain", 67: "heavy freezing rain",
+    71: "slight snow", 73: "moderate snow", 75: "heavy snow",
     77: "snow grains",
-    80: "slight rain showers",
-    81: "moderate rain showers",
-    82: "violent rain showers",
-    85: "slight snow showers",
-    86: "heavy snow showers",
-    95: "thunderstorm",
-    96: "thunderstorm with slight hail",
-    99: "thunderstorm with heavy hail"
+    80: "slight rain showers", 81: "moderate rain showers", 82: "violent rain showers",
+    85: "slight snow showers", 86: "heavy snow showers",
+    95: "thunderstorm", 96: "thunderstorm with slight hail", 99: "thunderstorm with heavy hail"
 }
 
 
 @tool
 def get_weather(city: str) -> str:
-    """
-    Get live weather using Open-Meteo.
-    No API key is required.
-    """
-
+    """Get live weather using Open-Meteo (no API key needed)."""
     city = city.strip()
-
     if not city:
-
         return "Please provide a city name."
 
     try:
-
-        # First find city coordinates
         geo_response = requests.get(
             "https://geocoding-api.open-meteo.com/v1/search",
-            params={
-                "name": city,
-                "count": 1,
-                "language": "en",
-                "format": "json"
-            },
+            params={"name": city, "count": 1, "language": "en", "format": "json"},
             timeout=10
         )
-
         geo_response.raise_for_status()
-
         geo_data = geo_response.json()
-
-        results = geo_data.get(
-            "results",
-            []
-        )
+        results = geo_data.get("results", [])
 
         if not results:
-
-            return (
-                f"I couldn't find the location '{city}'."
-            )
+            return f"I couldn't find the location '{city}'."
 
         location = results[0]
-
         latitude = location["latitude"]
         longitude = location["longitude"]
+        display_name = location.get("name", city)
+        country = location.get("country", "")
 
-        display_name = location.get(
-            "name",
-            city
-        )
-
-        country = location.get(
-            "country",
-            ""
-        )
-
-        # Get current weather
         weather_response = requests.get(
             "https://api.open-meteo.com/v1/forecast",
             params={
@@ -885,66 +485,29 @@ def get_weather(city: str) -> str:
             },
             timeout=10
         )
-
         weather_response.raise_for_status()
-
         weather_data = weather_response.json()
+        current = weather_data.get("current", {})
 
-        current = weather_data.get(
-            "current",
-            {}
-        )
-
-        temperature = current.get(
-            "temperature_2m"
-        )
-
-        feels_like = current.get(
-            "apparent_temperature"
-        )
-
-        humidity = current.get(
-            "relative_humidity_2m"
-        )
-
-        wind = current.get(
-            "wind_speed_10m"
-        )
-
-        weather_code = current.get(
-            "weather_code"
-        )
-
-        description = WEATHER_CODES.get(
-            weather_code,
-            "unknown conditions"
-        )
+        temperature = current.get("temperature_2m")
+        feels_like = current.get("apparent_temperature")
+        humidity = current.get("relative_humidity_2m")
+        wind = current.get("wind_speed_10m")
+        weather_code = current.get("weather_code")
+        description = WEATHER_CODES.get(weather_code, "unknown conditions")
 
         return (
             f"Current weather in {display_name}, {country}: "
-            f"{description}. "
-            f"Temperature {temperature}°C, "
-            f"feels like {feels_like}°C, "
-            f"humidity {humidity}%, "
+            f"{description}. Temperature {temperature}°C, "
+            f"feels like {feels_like}°C, humidity {humidity}%, "
             f"wind speed {wind} km/h."
         )
-
     except requests.RequestException as exc:
-
         print(f"Weather API Error: {exc}")
-
-        return (
-            "The live weather service is temporarily "
-            "unavailable."
-        )
-
+        return "The live weather service is temporarily unavailable."
     except Exception as exc:
-
         print(f"Weather Error: {exc}")
-
-        return (
-            "I couldn't retrieve the weather right now."
-        )
+        return "I couldn't retrieve the weather right now."
 
 
 # ============================================================
@@ -953,14 +516,9 @@ def get_weather(city: str) -> str:
 
 @tool
 def open_website(site: str) -> str:
-    """
-    Open a website in the default browser.
-    """
-
+    """Open a website in the default browser."""
     site = site.strip()
-
     if not site:
-
         return "Please specify a website."
 
     common_sites = {
@@ -975,46 +533,26 @@ def open_website(site: str) -> str:
     }
 
     key = site.lower()
-
     if key in common_sites:
-
         return f"OPEN_URL:{common_sites[key]}"
 
-    if site.startswith(
-        ("http://", "https://")
-    ):
-
+    if site.startswith(("http://", "https://")):
         return f"OPEN_URL:{site}"
 
     if "." in site and " " not in site:
-
         return f"OPEN_URL:https://{site}"
 
-    url = (
-        "https://www.google.com/search?q="
-        + quote_plus(site)
-    )
-
+    url = "https://www.google.com/search?q=" + quote_plus(site)
     return f"OPEN_URL:{url}"
 
 
 @tool
 def open_search_in_browser(query: str) -> str:
-    """
-    Open a Google search in the browser.
-    """
-
+    """Open a Google search in the browser."""
     query = query.strip()
-
     if not query:
-
         return "Please provide a search query."
-
-    url = (
-        "https://www.google.com/search?q="
-        + quote_plus(query)
-    )
-
+    url = "https://www.google.com/search?q=" + quote_plus(query)
     return f"OPEN_URL:{url}"
 
 
@@ -1023,17 +561,9 @@ def open_search_in_browser(query: str) -> str:
 # ============================================================
 
 @tool
-def send_email(
-    to: str,
-    subject: str,
-    body: str
-) -> str:
-    """
-    Send an email using Gmail SMTP.
-    """
-
+def send_email(to: str, subject: str, body: str) -> str:
+    """Send an email using Gmail SMTP."""
     if not EMAIL_ADDRESS or not EMAIL_APP_PASSWORD:
-
         return (
             "Email is not configured. "
             "Please configure GMAIL_EMAIL and "
@@ -1045,62 +575,35 @@ def send_email(
     body = body.strip()
 
     if not to or "@" not in to:
-
         return "Please provide a valid recipient email address."
-
     if not subject:
-
         subject = "Message from Voicely AI"
-
     if not body:
-
         return "The email body cannot be empty."
 
     try:
-
         from email.message import EmailMessage
         import smtplib
 
         message = EmailMessage()
-
         message["From"] = EMAIL_ADDRESS
         message["To"] = to
         message["Subject"] = subject
-
         message.set_content(body)
 
-        with smtplib.SMTP_SSL(
-            "smtp.gmail.com",
-            465,
-            timeout=20
-        ) as server:
-
-            server.login(
-                EMAIL_ADDRESS,
-                EMAIL_APP_PASSWORD
-            )
-
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=20) as server:
+            server.login(EMAIL_ADDRESS, EMAIL_APP_PASSWORD)
             server.send_message(message)
 
-        return (
-            f"Email successfully sent to {to}."
-        )
-
+        return f"Email successfully sent to {to}."
     except smtplib.SMTPAuthenticationError:
-
         return (
             "Email authentication failed. "
             "Check the Gmail address and App Password."
         )
-
     except Exception as exc:
-
         print(f"Email Error: {exc}")
-
-        return (
-            "I couldn't send the email. "
-            "Please check your email settings."
-        )
+        return "I couldn't send the email. Please check your email settings."
 
 
 # ============================================================
@@ -1112,135 +615,67 @@ reminder_lock = threading.Lock()
 
 
 def reminder_alert(message: str):
-    """Announce a due reminder while VOICELY is running."""
     try:
         print(f"\n\n⏰ REMINDER: {message}", flush=True)
-
-        # Audible notification on Windows.
         try:
             import winsound
             winsound.MessageBeep(winsound.MB_ICONEXCLAMATION)
         except Exception:
             pass
-
         speak(f"Reminder: {message}")
-
     except Exception as exc:
         print(f"Reminder notification error: {exc}", flush=True)
-
     finally:
         with reminder_lock:
             if message in active_reminders:
                 active_reminders.remove(message)
 
 
-
-
 def create_reminder(seconds: float, message: str):
-
-    timer = threading.Timer(
-        seconds,
-        reminder_alert,
-        args=(message,)
-    )
-
-    # Important:
-    # Timer must not prevent the assistant from closing.
+    timer = threading.Timer(seconds, reminder_alert, args=(message,))
     timer.daemon = True
-
     timer.start()
-
     with reminder_lock:
-
         active_reminders.append(message)
-
     return timer
 
 
 @tool
-def set_reminder(
-    minutes: float,
-    message: str
-) -> str:
-    """
-    Set a reminder after a number of minutes.
-    """
-
+def set_reminder(minutes: float, message: str) -> str:
+    """Set a reminder after a number of minutes."""
     try:
-
         minutes = float(minutes)
-
     except Exception:
-
         return "Please provide a valid number of minutes."
 
     message = message.strip()
-
     if minutes <= 0:
-
         return "Reminder time must be greater than zero."
-
     if not message:
-
         return "Please provide a reminder message."
 
-    seconds = minutes * 60
-
-    create_reminder(
-        seconds,
-        message
-    )
-
-    if minutes == 1:
-
-        time_text = "1 minute"
-
-    else:
-
-        time_text = f"{minutes:g} minutes"
-
-    return (
-        f"Reminder set for {time_text}: {message}"
-    )
+    create_reminder(minutes * 60, message)
+    time_text = "1 minute" if minutes == 1 else f"{minutes:g} minutes"
+    return f"Reminder set for {time_text}: {message}"
 
 
 @tool
-def set_reminder_seconds(
-    seconds: int,
-    message: str
-) -> str:
-    """
-    Set a reminder after a number of seconds.
-    Useful for testing.
-    """
-
+def set_reminder_seconds(seconds: int, message: str) -> str:
+    """Set a reminder after a number of seconds (testing)."""
     try:
-
         seconds = int(seconds)
-
     except Exception:
-
         return "Please provide a valid number of seconds."
 
     if seconds <= 0:
-
         return "Reminder time must be greater than zero."
 
     message = message.strip()
-
     if not message:
-
         return "Please provide a reminder message."
 
-    create_reminder(
-        seconds,
-        message
-    )
-
-    return (
-        f"Reminder set for {seconds} seconds: "
-        f"{message}"
-    )
+    create_reminder(seconds, message)
+    return f"Reminder set for {seconds} seconds: {message}"
 
 
 # ============================================================
@@ -1248,54 +683,22 @@ def set_reminder_seconds(
 # ============================================================
 
 def handle_direct_command(command: str):
-    """
-    Handle commands that do not need Gemini.
-    """
+    """Handle commands that do not need the LLM."""
 
     text = command.lower().strip()
 
-    # --------------------------------------------------------
     # EXIT
-    # --------------------------------------------------------
-
-    exit_words = {
-        "exit",
-        "quit",
-        "goodbye",
-        "bye",
-        "stop",
-        "shutdown"
-    }
-
+    exit_words = {"exit", "quit", "goodbye", "bye", "stop", "shutdown"}
     if text in exit_words:
-
         return "__EXIT__"
 
-    # --------------------------------------------------------
     # CUSTOM COMMAND
-    # --------------------------------------------------------
-
-    custom_match = re.match(
-        r"^(?:run|execute)\s+custom\s+command\s+(.+)$",
-        text
-    )
-
+    custom_match = re.match(r"^(?:run|execute)\s+custom\s+command\s+(.+)$", text)
     if custom_match:
-
         command_name = custom_match.group(1).strip()
+        return run_custom_command.invoke({"command": command_name})
 
-        return run_custom_command.invoke(
-            {
-                "command": command_name
-            }
-        )
-
-   
-    
-    # --------------------------------------------------------
-    # REMINDERS — DIRECT COMMANDS
-    # --------------------------------------------------------
-
+    # REMINDERS
     reminder_match = re.search(
         r"\b(?:remind me|set a reminder)"
         r"\s+(?:to\s+)?(.+?)"
@@ -1309,7 +712,6 @@ def handle_direct_command(command: str):
         message = reminder_match.group(1).strip()
         amount = float(reminder_match.group(2))
         unit = reminder_match.group(3).lower()
-
     else:
         reminder_match = re.search(
             r"\b(?:remind me|set a reminder)"
@@ -1319,7 +721,6 @@ def handle_direct_command(command: str):
             text,
             re.IGNORECASE
         )
-
         if reminder_match:
             amount = float(reminder_match.group(1))
             unit = reminder_match.group(2).lower()
@@ -1332,7 +733,6 @@ def handle_direct_command(command: str):
     if reminder_match:
         if amount <= 0:
             return "Please specify a time greater than zero."
-
         if not message:
             return "What should I remind you about?"
 
@@ -1347,7 +747,6 @@ def handle_direct_command(command: str):
             time_text = f"{amount:g} hours"
 
         create_reminder(seconds, message)
-
         return (
             f"Reminder set! I'll remind you to {message} "
             f"in {time_text}, while VOICELY is running."
@@ -1359,11 +758,7 @@ def handle_direct_command(command: str):
             "Say: Remind me in 5 minutes to study."
         )
 
-  
-    # --------------------------------------------------------
     # COMMON WEBSITE COMMANDS
-    # --------------------------------------------------------
-
     direct_sites = {
         "open google": "google",
         "open gmail": "gmail",
@@ -1376,31 +771,13 @@ def handle_direct_command(command: str):
     }
 
     if text in direct_sites:
+        return open_website.invoke({"site": direct_sites[text]})
 
-        return open_website.invoke(
-            {
-                "site": direct_sites[text]
-            }
-        )
-
-    # --------------------------------------------------------
     # GOOGLE SEARCH
-    # --------------------------------------------------------
-
-    search_match = re.match(
-        r"^(?:search for|google)\s+(.+)$",
-        text
-    )
-
+    search_match = re.match(r"^(?:search for|google)\s+(.+)$", text)
     if search_match:
-
         query = search_match.group(1).strip()
-
-        return open_search_in_browser.invoke(
-            {
-                "query": query
-            }
-        )
+        return open_search_in_browser.invoke({"query": query})
 
     return None
 
@@ -1428,7 +805,7 @@ tools = [
 
 
 # ============================================================
-# GEMINI AGENT
+# SYSTEM PROMPT
 # ============================================================
 
 SYSTEM_PROMPT = """
@@ -1438,66 +815,45 @@ Your job is to answer naturally and perform actions using tools.
 
 IMPORTANT TOOL RULES:
 
-1. Use get_current_time when the user asks for the current time.
-
-2. Use get_current_date when the user asks for today's date.
-
+1. Use get_current_time for current time.
+2. Use get_current_date for today's date.
 3. Use get_weather for weather requests.
-
 4. Use send_email when the user asks to send an email.
-   Ask for recipient, subject, and body if information is missing.
-
-5. Use set_reminder for reminders expressed in minutes or hours.
-
+5. Use set_reminder for reminders in minutes or hours.
 6. Use set_reminder_seconds for very short testing reminders.
-
-7. Use web_search for current information that needs web research.
-
+7. Use web_search for current information.
 8. Use search_news for news requests.
-
-9. Use calculate for mathematical calculations.
-
-10. Use open_website when the user asks to open a website.
-
-11. Use open_search_in_browser when the user asks to search something
-    in a browser.
-
+9. Use calculate for math.
+10. Use open_website to open websites.
+11. Use open_search_in_browser to search in browser.
 12. Use run_custom_command for existing custom commands.
-
-13. Use add_custom_command when the user explicitly asks to create
-    a new custom command.
-
-14. Use local_knowledge for information that may exist in the local
-    knowledge base.
+13. Use add_custom_command to create a new custom command.
+14. Use local_knowledge for local knowledge base questions.
 
 15. For normal general-knowledge questions, answer directly.
-
-16. Never claim that an email was sent unless the send_email tool
-    successfully reports that it was sent.
-
-17. Keep responses concise and natural because responses are spoken
-    aloud.
-
+16. Never claim an email was sent unless send_email reports success.
+17. Keep responses concise and natural (they are spoken aloud).
 18. Never expose API keys, passwords, or private configuration.
-
 19. Do not invent tool results.
 
-You are voicely AI.
+You are Voicely AI.
 """
 
 
+# ============================================================
+# GROQ AGENT
+# ============================================================
+
 agent = None
 
-if GEMINI_API_KEY:
-
+if GROQ_API_KEY:
     try:
-
-        # No temperature parameter here.
-        # This avoids the Gemini sampling-parameter warning.
-        model = ChatGoogleGenerativeAI(
+        model = ChatOpenAI(
             model=MODEL_NAME,
-            google_api_key=GEMINI_API_KEY,
-            max_retries=2
+            api_key=GROQ_API_KEY,
+            base_url=GROQ_BASE_URL,
+            temperature=0.6,
+            max_retries=2,
         )
 
         agent = create_agent(
@@ -1505,12 +861,9 @@ if GEMINI_API_KEY:
             tools=tools,
             system_prompt=SYSTEM_PROMPT
         )
-
     except Exception as exc:
-
-        print(
-            f"Agent initialization error: {exc}"
-        )
+        print(f"Agent initialization error: {exc}")
+        agent = None
 
 
 # ============================================================
@@ -1518,69 +871,44 @@ if GEMINI_API_KEY:
 # ============================================================
 
 def extract_text(value):
-    """
-    Convert LangChain response content into readable text.
-    """
-
+    """Convert LangChain response content into readable text."""
     if value is None:
         return ""
-
     if isinstance(value, str):
         return value.strip()
-
     if isinstance(value, list):
-
         parts = []
-
         for item in value:
-
             if isinstance(item, str):
-
                 parts.append(item)
-
             elif isinstance(item, dict):
-
                 text = item.get("text")
-
                 if text:
                     parts.append(str(text))
-
         return " ".join(parts).strip()
-
     if isinstance(value, dict):
-
         if "text" in value:
             return str(value["text"]).strip()
-
         if "content" in value:
-            return extract_text(
-                value["content"]
-            )
-
+            return extract_text(value["content"])
         return str(value).strip()
-
     return str(value).strip()
 
 
-import re
-import webbrowser
-
-
 # ============================================================
-# GEMINI MODEL FALLBACK PIPELINE SETUP
+# FALLBACK AGENT FACTORY
 # ============================================================
 
 def create_agent_for_model(model_name: str):
-    """Create a LangChain agent using a specified Gemini model."""
+    """Create a LangChain agent using a specific Groq model."""
+    if not GROQ_API_KEY:
+        raise RuntimeError("GROQ_API_KEY is missing. Check your .env file.")
 
-    if not GEMINI_API_KEY:
-        raise RuntimeError(
-            "GEMINI_API_KEY is missing. Check your .env file."
-        )
-
-    model = ChatGoogleGenerativeAI(
+    model = ChatOpenAI(
         model=model_name,
-        google_api_key=GEMINI_API_KEY,
+        api_key=GROQ_API_KEY,
+        base_url=GROQ_BASE_URL,
+        temperature=0.6,
         max_retries=0,
     )
 
@@ -1591,90 +919,54 @@ def create_agent_for_model(model_name: str):
     )
 
 
-# Try the configured model first, followed by alternatives.
-GEMINI_MODELS = list(dict.fromkeys([
+# ============================================================
+# GROQ MODEL FALLBACK PIPELINE
+# ============================================================
+
+GROQ_MODELS = list(dict.fromkeys([
     MODEL_NAME,
-    "gemini-3.8-flash",
-    "gemini-3.7-flash",
-    "gemini-3.6-flash",
-    "gemini-3.5-flash",
-    "gemini-3.5-flash-lite",
-    "gemini-3.1-flash-lite",
-    "gemini-2.5-flash",
-    "gemini-2.0-flash",
-    "gemini-2.5-flash-lite",
+    "openai/gpt-oss-120b",
+    "openai/gpt-oss-20b",
+    "qwen/qwen3.6-27b",
 ]))
 
 
-def invoke_gemini_fallback(user_text: str) -> str:
-    """Invoke a real Gemini-backed agent."""
-
+def invoke_groq_fallback(user_text: str) -> str:
+    """Invoke a real Groq-backed agent with fallback."""
     last_exception = None
 
-    for model_name in GEMINI_MODELS:
+    for model_name in GROQ_MODELS:
         try:
-            print(
-                f"Trying Gemini model: {model_name}",
-                flush=True,
-            )
-
+            print(f"Trying Groq model: {model_name}", flush=True)
             temp_agent = create_agent_for_model(model_name)
 
             result = temp_agent.invoke({
-                "messages": [
-                    {"role": "user", "content": user_text}
-                ]
+                "messages": [{"role": "user", "content": user_text}]
             })
 
             messages = result.get("messages", [])
-
             for message in reversed(messages):
                 content = getattr(message, "content", None)
-
                 if getattr(message, "type", "") == "tool":
                     continue
-
                 answer = extract_text(content)
-
                 if answer:
-                    print(
-                        f"Gemini response received from "
-                        f"{model_name}",
-                        flush=True,
-                    )
+                    print(f"Groq response received from {model_name}", flush=True)
                     return answer
 
-            raise RuntimeError(
-                f"{model_name} returned no text response."
-            )
+            raise RuntimeError(f"{model_name} returned no text response.")
 
         except Exception as exc:
             last_exception = exc
-            error_text = str(exc)
             print(
-                f"Gemini error ({model_name}): "
-                f"{type(exc).__name__}: {error_text}",
+                f"Groq error ({model_name}): {type(exc).__name__}: {exc}",
                 flush=True,
             )
 
-            # Do not keep retrying different models if the
-            # API key or shared quota is the actual problem.
-            error_lower = error_text.lower()
-
-            if any(term in error_lower for term in (
-                "resource_exhausted",
-                "quota exceeded",
-                "rate limit",
-                "permission_denied",
-                "api key not valid",
-                "unauthenticated",
-            )):
-                break
-
     raise RuntimeError(
-        f"Gemini could not generate a response. "
-        f"Last error: {last_exception}"
+        f"Groq could not generate a response. Last error: {last_exception}"
     )
+
 
 # ============================================================
 # TOOL FALLBACK FUNCTION
@@ -1687,68 +979,40 @@ def _fallback_from_tools(user_text: str) -> str:
     if not query:
         return "Please tell me what you would like me to do."
 
-    # --------------------------------------------------------
     # WEATHER
-    # --------------------------------------------------------
     weather_words = (
-        "weather", "temperature", "forecast", "rain", 
+        "weather", "temperature", "forecast", "rain",
         "raining", "humidity", "wind", "hot", "cold"
     )
-
     if any(word in lower for word in weather_words):
-        weather_match = re.search(
-            r"(?:in|for|at)\s+(.+)$",
-            query,
-            re.IGNORECASE
-        )
-
+        weather_match = re.search(r"(?:in|for|at)\s+(.+)$", query, re.IGNORECASE)
         if weather_match:
             city = weather_match.group(1).strip()
         else:
             city = query
             for word in weather_words:
-                city = re.sub(
-                    rf"\b{re.escape(word)}\b",
-                    "",
-                    city,
-                    flags=re.IGNORECASE
-                )
-
+                city = re.sub(rf"\b{re.escape(word)}\b", "", city, flags=re.IGNORECASE)
             city = re.sub(
                 r"\b(what|is|the|today|now|current|please|tell|me)\b",
-                "",
-                city,
-                flags=re.IGNORECASE
+                "", city, flags=re.IGNORECASE
             ).strip()
 
         if city:
             try:
-                result = get_weather(city)
+                result = get_weather.invoke({"city": city})
                 if result:
                     return result
             except Exception as exc:
-                print(
-                    f"Weather fallback error: {type(exc).__name__}: {exc}",
-                    flush=True
-                )
+                print(f"Weather fallback error: {type(exc).__name__}: {exc}", flush=True)
 
-    # --------------------------------------------------------
     # NEWS
-    # --------------------------------------------------------
-    news_words = (
-        "latest news", "recent news", "breaking news", 
-        "news about", "news on"
-    )
-
+    news_words = ("latest news", "recent news", "breaking news", "news about", "news on")
     if any(word in lower for word in news_words):
         news_query = re.sub(
             r"\b(latest|recent|breaking|news|about|on|tell|me|the)\b",
-            " ",
-            query,
-            flags=re.IGNORECASE
+            " ", query, flags=re.IGNORECASE
         )
         news_query = re.sub(r"\s+", " ", news_query).strip()
-
         if not news_query:
             news_query = "latest news"
 
@@ -1757,40 +1021,29 @@ def _fallback_from_tools(user_text: str) -> str:
             if result:
                 return result
         except Exception as exc:
-            print(
-                f"News fallback error: {type(exc).__name__}: {exc}",
-                flush=True
-            )
+            print(f"News fallback error: {type(exc).__name__}: {exc}", flush=True)
 
-    # --------------------------------------------------------
-    # GENERAL WEB SEARCH
-    # --------------------------------------------------------
+    # WEB SEARCH
     try:
         result = web_search.invoke({"query": query})
         if result:
             return (
-                "I couldn't use Gemini right now, so I used "
+                "I couldn't use Groq right now, so I used "
                 "web search to find information for you.\n\n"
                 f"{result}"
             )
     except Exception as exc:
-        print(
-            f"Web fallback error: {type(exc).__name__}: {exc}",
-            flush=True
-        )
+        print(f"Web fallback error: {type(exc).__name__}: {exc}", flush=True)
 
-    # --------------------------------------------------------
-    # EVERYTHING FAILED
-    # --------------------------------------------------------
     return (
-        "Gemini is temporarily unavailable and I couldn't "
+        "Groq is temporarily unavailable and I couldn't "
         "retrieve a reliable answer from my other tools. "
         "Please try again in a little while."
     )
 
 
 # ============================================================
-# MAIN AI ROUTER (ASK VOICELY)
+# MAIN AI ROUTER
 # ============================================================
 
 def ask_voicely(user_text: str) -> str:
@@ -1799,31 +1052,18 @@ def ask_voicely(user_text: str) -> str:
     if not user_text:
         return "Please tell me what you would like me to do."
 
-    # --------------------------------------------------------
-    # DIRECT COMMANDS
-    # --------------------------------------------------------
     try:
         direct_result = handle_direct_command(user_text)
-
         if direct_result == "__EXIT__":
             return "__EXIT__"
-
         if direct_result:
             return direct_result
-
     except Exception as exc:
-        print(
-            f"Direct command error: {type(exc).__name__}: {exc}",
-            flush=True
-        )
+        print(f"Direct command error: {type(exc).__name__}: {exc}", flush=True)
 
-    # --------------------------------------------------------
-    # GEMINI MODEL PIPELINE WITH FALLBACK
-    # --------------------------------------------------------
     print("\nVoicely AI is thinking...", flush=True)
 
     try:
-        # First try the primary agent standard invoke
         if 'agent' in globals() and agent is not None:
             try:
                 result = agent.invoke(
@@ -1837,25 +1077,17 @@ def ask_voicely(user_text: str) -> str:
                         if text:
                             return text
             except Exception as primary_exc:
-                print(f"Primary agent failed: {primary_exc}. Launching model fallback pipeline...", flush=True)
+                print(f"Primary agent failed: {primary_exc}. Launching fallback...", flush=True)
 
-        # Execute fallback pipeline across model tiers
-        return invoke_gemini_fallback(user_text)
-
+        return invoke_groq_fallback(user_text)
     except Exception as exc:
         error_text = str(exc)
-        print(
-            f"All Gemini models failed: {type(exc).__name__}: {error_text}",
-            flush=True
-        )
+        print(f"All Groq models failed: {type(exc).__name__}: {error_text}", flush=True)
 
-    # --------------------------------------------------------
-    # TOOL FALLBACK
-    # --------------------------------------------------------
     return _fallback_from_tools(user_text)
 
 
-# Backward compatibility alias
+# Backward compatibility alias — used by app.py
 ask_apex = ask_voicely
 
 
@@ -1875,13 +1107,9 @@ def main():
 
     while True:
         user_text = listen()
-
         if not user_text:
             continue
 
-        # ----------------------------------------------------
-        # DIRECT COMMANDS
-        # ----------------------------------------------------
         direct_result = handle_direct_command(user_text)
 
         if direct_result == "__EXIT__":
@@ -1901,17 +1129,10 @@ def main():
                 speak(direct_result)
             continue
 
-        # ----------------------------------------------------
-        # GEMINI / FALLBACK RESPONSE
-        # ----------------------------------------------------
         response = ask_voicely(user_text)
-
         if not response:
             continue
 
-        # ----------------------------------------------------
-        # OPEN URL RESPONSE
-        # ----------------------------------------------------
         if response.startswith("OPEN_URL:"):
             url = response[len("OPEN_URL:"):]
             try:
@@ -1922,15 +1143,8 @@ def main():
                 speak("I couldn't open the browser.")
             continue
 
-        # ----------------------------------------------------
-        # NORMAL RESPONSE
-        # ----------------------------------------------------
         speak(response)
 
-
-# ============================================================
-# START
-# ============================================================
 
 if __name__ == "__main__":
     main()
@@ -1941,11 +1155,5 @@ if __name__ == "__main__":
 # ============================================================
 
 def reset_conversation():
-    """
-    Reset conversational state for the web interface.
-
-    The desktop assistant does not maintain a persistent
-    conversation history, so there is nothing to clear here.
-    This function exists for Streamlit compatibility.
-    """
+    """Reset for web interface. Nothing to clear."""
     return None
